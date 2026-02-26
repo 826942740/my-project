@@ -2,7 +2,9 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Fangame — AI 文字冒险</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
@@ -126,6 +128,9 @@
         <button id="btn-new-game-ingame" class="btn btn-small btn-danger">新游戏</button>
       </div>
     </header>
+
+    <!-- 手机端状态条（仅移动端显示，侧边栏的紧凑替代） -->
+    <div id="mobile-stats-bar" class="mobile-stats-bar"></div>
 
     <!-- 主体：文本区 + 侧边栏 -->
     <div class="main-layout">

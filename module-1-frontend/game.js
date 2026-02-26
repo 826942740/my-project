@@ -109,6 +109,9 @@ let elPhaseLabel, elPlayerInput, elBtnSend;
 // 弹窗
 let elModalSaveCode, elModalOverlay, elModalCodeDisplay, elBtnCopyCode, elBtnModalClose;
 
+// 手机端状态条
+let elMobileStatsBar;
+
 // 介绍界面
 let elBtnStartAdventure, elBtnIntroBack;
 
@@ -164,6 +167,8 @@ document.addEventListener('DOMContentLoaded', () => {
   elBtnStartAdventure  = document.getElementById('btn-start-adventure');
   elBtnIntroBack       = document.getElementById('btn-intro-back');
 
+  elMobileStatsBar     = document.getElementById('mobile-stats-bar');
+
   // --- 绑定事件 ---
   bindEvents();
 
@@ -190,8 +195,8 @@ function bindEvents() {
   // 开始界面：存档码继续
   elBtnResume.addEventListener('click', () => {
     const code = elInputResumeCode.value.trim().toUpperCase();
-    if (code.length < 4) {
-      showResumeError('存档码太短，请检查后重试');
+    if (code.length < 6) {
+      showResumeError('存档码太短，请检查后重试（6位字符）');
       return;
     }
     resumeWithCode(code);
@@ -281,8 +286,7 @@ async function initGame() {
       elSaveList.classList.add('hidden');
     }
   } catch (err) {
-    // 服务器无法连接，隐藏存档卡片
-    localStorage.removeItem(TOKEN_KEY);
+    // 服务器无法连接，仅隐藏存档卡片，保留 token（网络恢复后可继续）
     elSaveList.classList.add('hidden');
   }
 }
@@ -321,6 +325,17 @@ function enterContinueGame() {
  */
 function applyRestoredState(state) {
   updateSidebar(state);
+
+  // 恢复卡片阶段的对话历史（card_history 格式：[{role:"player"|"npc", content:"..."}]）
+  if (state.card_history && state.card_history.length > 0) {
+    state.card_history.forEach(msg => {
+      if (msg.role === 'player') {
+        renderMessage('player', msg.content);
+      } else if (msg.role === 'npc') {
+        renderMessage('npc', msg.content);
+      }
+    });
+  }
 
   // 根据 in_card 判断当前阶段
   if (state.in_card) {
@@ -925,6 +940,38 @@ function updateSidebarStats(stats) {
       <span class="stat-value">${val}</span>
     `;
     elSidebarStats.appendChild(row);
+  }
+
+  // 同步更新手机端紧凑状态条
+  updateMobileStatsBar(stats);
+}
+
+/**
+ * 更新手机端状态条（仅手机端可见，侧边栏的紧凑替代）
+ * @param {object} stats - { hp: 80, hp_max: 100, amulet: 60, ... }
+ */
+function updateMobileStatsBar(stats) {
+  if (!elMobileStatsBar) return;
+  elMobileStatsBar.innerHTML = '';
+
+  for (const [key, val] of Object.entries(stats)) {
+    if (key === 'hp_max') continue;           // hp_max 并入 hp 显示
+    if (val === null || val === undefined) continue;
+    if (val === 0) continue;                  // 值为 0 不显示
+
+    const icon = STAT_ICONS[key] !== undefined ? STAT_ICONS[key] : '📦';
+    const chip = document.createElement('span');
+    chip.classList.add('mobile-stat-chip');
+
+    if (key === 'hp') {
+      // HP 显示 "❤️ 80/100"
+      const hpMax = stats.hp_max || 100;
+      chip.textContent = `${icon} ${val}/${hpMax}`;
+    } else {
+      chip.textContent = `${icon} ${val}`;
+    }
+
+    elMobileStatsBar.appendChild(chip);
   }
 }
 
