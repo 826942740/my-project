@@ -3,7 +3,7 @@
 # 类比：每张卡片是一个小关卡，玩家进去后要和 NPC 交谈直到分出胜负
 
 from __future__ import annotations  # 兼容 Python 3.9 的联合类型注解
-from stats import apply_effects, is_dead, format_effects_log
+from .stats import apply_effects, is_dead, format_effects_log
 
 
 def start_card(card: dict) -> dict:

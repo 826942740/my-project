@@ -9,10 +9,10 @@ import json
 import random
 import copy
 
-# 导入子模块
-from navigator import get_nav_context as _get_nav_context
-from card_runner import process_card_turn, load_card
-from stats import apply_effects, is_dead, format_effects_log
+# 导入子模块（使用相对导入，无论从哪里 import 都能正常工作）
+from .navigator import get_nav_context as _get_nav_context
+from .card_runner import process_card_turn, load_card
+from .stats import apply_effects, is_dead, format_effects_log
 
 # 故事包根目录（相对于本文件）
 STORIES_DIR = Path(__file__).parent / "stories"
