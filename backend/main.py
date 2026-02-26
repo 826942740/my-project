@@ -402,18 +402,23 @@ async def card_action(req: CardActionRequest):
     )
 
     # 调用 AI（expect_json=True，自动重试保证格式正确）
-    ai_resp_str = ai_client.call(messages, expect_json=True)
-
-    # 解析 AI 返回的 JSON
+    # 外层 try 捕获 AI 完全失败的情况（重试耗尽后抛出 ValueError）
+    ai_response = None
     try:
-        ai_response = json.loads(ai_resp_str)
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.error(f"AI 返回无法解析为 JSON：{e}，原始内容：{ai_resp_str[:200]}")
-        # 降级：使用默认 continue 避免游戏卡死
+        ai_resp_str = ai_client.call(messages, expect_json=True)
+        try:
+            ai_response = json.loads(ai_resp_str)
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(f"AI 返回无法解析为 JSON：{e}，原始内容：{ai_resp_str[:200]}")
+    except Exception as e:
+        logger.error(f"AI 调用彻底失败（重试耗尽）：{e}")
+
+    # 无论哪种失败，都用降级响应兜底，避免游戏卡死
+    if ai_response is None:
         ai_response = {
             "npc_response": "（AI 响应异常，请重试）",
             "judge": "continue",
-            "judge_reason": "JSON 解析失败，降级处理",
+            "judge_reason": "AI调用失败，降级处理",
             "options": [],
         }
 

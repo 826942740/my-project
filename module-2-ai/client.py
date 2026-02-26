@@ -180,8 +180,12 @@ class AIClient:
             return extracted
 
         # 附加格式要求重试一次
-        logger.warning("AI 返回内容不是合法 JSON，附加格式要求重试...")
-        retry_messages = list(original_messages) + [
+        # 只保留 system 消息和 user 消息，过滤掉 assistant 消息
+        # 避免把包含非 JSON 的 assistant 历史带入重试，导致 AI 再次混乱输出纯文本
+        logger.warning("AI 返回内容不是合法 JSON，附加格式要求重试（过滤历史 assistant 消息）...")
+        retry_messages = [
+            m for m in original_messages if m.get("role") in ("system", "user")
+        ] + [
             {
                 "role": "user",
                 "content": (
