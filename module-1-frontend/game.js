@@ -42,6 +42,10 @@ const STAT_ICONS = {
 /** 当前会话 token */
 let sessionToken = null;
 
+/** 缓存从服务器预加载的存档状态（用于开始界面直接继续） */
+let pendingRestoredState = null;
+let pendingNavNarrative = null;
+
 /**
  * 当前游戏阶段：'navigation'（导航中）或 'card'（卡片对话中）
  * 根据后端返回的 state.in_card 字段同步更新
@@ -70,6 +74,9 @@ let elPhaseLabel, elPlayerInput, elBtnSend;
 
 // 弹窗
 let elModalSaveCode, elModalOverlay, elModalCodeDisplay, elBtnCopyCode, elBtnModalClose;
+
+// 开始界面：存档列表
+let elSaveList, elSaveChapterInfo, elSavePosInfo, elBtnContinue;
 
 /* ============================================================
    初始化入口
@@ -111,6 +118,11 @@ document.addEventListener('DOMContentLoaded', () => {
   elBtnCopyCode        = document.getElementById('btn-copy-code');
   elBtnModalClose      = document.getElementById('btn-modal-close');
 
+  elSaveList           = document.getElementById('save-list');
+  elSaveChapterInfo    = document.getElementById('save-chapter-info');
+  elSavePosInfo        = document.getElementById('save-pos-info');
+  elBtnContinue        = document.getElementById('btn-continue');
+
   // --- 绑定事件 ---
   bindEvents();
 
@@ -122,6 +134,9 @@ document.addEventListener('DOMContentLoaded', () => {
  * 绑定所有按钮、输入框事件
  */
 function bindEvents() {
+  // 开始界面：继续上次游戏
+  elBtnContinue.addEventListener('click', () => enterContinueGame());
+
   // 开始界面：新游戏
   elBtnNewGame.addEventListener('click', () => startNewGame());
 
@@ -189,41 +204,70 @@ function bindEvents() {
    ============================================================ */
 
 /**
- * 页面初始化：检查本地 token，决定显示开始界面还是恢复游戏
+ * 页面初始化：始终先显示开始界面，如果有存档则在界面上展示存档信息
  */
 async function initGame() {
+  // 先显示开始界面，再决定是否展示存档卡片
+  showStartScreen();
+
   const storedToken = localStorage.getItem(TOKEN_KEY);
 
-  if (!storedToken) {
-    // 无 token：直接显示开始界面
-    showStartScreen();
+  // 无有效 token：隐藏存档列表，仅显示新游戏
+  if (!storedToken || storedToken === 'undefined') {
+    localStorage.removeItem(TOKEN_KEY);  // 清理可能的 "undefined" 字符串
+    elSaveList.classList.add('hidden');
     return;
   }
 
-  // 有 token：尝试从服务器恢复状态
+  // 有 token：尝试从服务器预加载存档状态，在开始界面显示存档信息
   try {
-    showLoading();
     const data = await apiGet(`/api/state?token=${encodeURIComponent(storedToken)}`);
-    hideLoading();
 
     if (data.valid) {
-      // token 有效：进入游戏，恢复状态
+      // 存档有效：缓存状态，显示存档卡片
       sessionToken = storedToken;
-      showGameScreen();
-      applyRestoredState(data.state, data.nav_narrative);
+      pendingRestoredState = data.state;
+      pendingNavNarrative = data.nav_narrative;
+      showSaveCard(data.state);
     } else {
-      // token 无效（存档过期或服务器重置）
+      // 存档已过期
       localStorage.removeItem(TOKEN_KEY);
-      showStartScreen();
-      renderMessage('system', '上次存档已过期，请开始新游戏');
+      elSaveList.classList.add('hidden');
     }
   } catch (err) {
-    hideLoading();
-    // 网络故障：显示开始界面并给出提示
+    // 服务器无法连接，隐藏存档卡片
     localStorage.removeItem(TOKEN_KEY);
-    showStartScreen();
-    renderMessage('warning', `无法连接服务器（${err.message}），请确认后端已启动`);
+    elSaveList.classList.add('hidden');
   }
+}
+
+/**
+ * 在开始界面显示存档卡片（章节名 + 坐标）
+ * @param {object} state - GameState 对象
+ */
+function showSaveCard(state) {
+  const chapterName = state.chapter_name || `第 ${(state.chapter_idx || 0) + 1} 章`;
+  const pos = state.position
+    ? `(${state.position[0]}, ${state.position[1]})`
+    : '—';
+
+  elSaveChapterInfo.textContent = chapterName;
+  elSavePosInfo.textContent = `位置：${pos}`;
+  elSaveList.classList.remove('hidden');
+}
+
+/**
+ * 继续上次游戏：直接用预加载的存档状态进入游戏
+ */
+function enterContinueGame() {
+  if (!sessionToken || !pendingRestoredState) return;
+
+  showGameScreen();
+  applyRestoredState(pendingRestoredState, pendingNavNarrative);
+
+  // 清除缓存，避免重复使用
+  pendingRestoredState = null;
+  pendingNavNarrative = null;
 }
 
 /**

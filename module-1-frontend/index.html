@@ -11,15 +11,28 @@
   <!-- ===== 开始界面（无 token 时显示）===== -->
   <div id="start-screen" class="start-screen hidden">
     <div class="start-box">
-      <h1 class="start-title">⚔️ 黑暗森林</h1>
+      <h1 class="start-title">探索</h1>
       <p class="start-subtitle">AI 驱动的文字冒险游戏</p>
 
-      <!-- 新游戏按钮 -->
-      <button id="btn-new-game" class="btn btn-primary">开始游戏</button>
+      <!-- 存档列表（有存档时显示） -->
+      <div id="save-list" class="save-list hidden">
+        <p class="save-list-label">📂 继续上次游戏</p>
+        <div class="save-item">
+          <div class="save-info">
+            <span id="save-chapter-info" class="save-chapter-text">—</span>
+            <span id="save-pos-info" class="save-pos-text">位置：—</span>
+          </div>
+          <button id="btn-continue" class="btn btn-primary">继续</button>
+        </div>
+        <hr class="start-divider" />
+      </div>
 
-      <!-- 用存档码继续 -->
+      <!-- 新游戏按钮 -->
+      <button id="btn-new-game" class="btn btn-secondary">开始新游戏</button>
+
+      <!-- 换设备用存档码 -->
       <div class="resume-area">
-        <p class="resume-hint">已有存档码？</p>
+        <p class="resume-hint">换设备？输入存档码</p>
         <div class="resume-row">
           <input
             id="input-resume-code"
@@ -28,7 +41,7 @@
             placeholder="输入存档码（如 A3X7KM）"
             maxlength="10"
           />
-          <button id="btn-resume" class="btn btn-secondary">继续游戏</button>
+          <button id="btn-resume" class="btn btn-ghost">加载</button>
         </div>
         <p id="resume-error" class="resume-error hidden">存档码无效，请重试</p>
       </div>

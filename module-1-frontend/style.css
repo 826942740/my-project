@@ -691,3 +691,77 @@ input {
     --sidebar-w: 200px;
   }
 }
+
+/* ============================================================
+   开始界面：存档列表
+   ============================================================ */
+
+/* 存档区块容器 */
+.save-list {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+/* 存档区块标签 */
+.save-list-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  margin-bottom: 0.5rem;
+  text-align: left;
+}
+
+/* 存档条目：左侧信息 + 右侧按钮 */
+.save-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: rgba(124, 106, 245, 0.08);
+  border: 1px solid rgba(124, 106, 245, 0.25);
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+}
+
+/* 存档文字信息（上下排列） */
+.save-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.save-chapter-text {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}
+
+.save-pos-text {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+}
+
+/* 开始界面分割线 */
+.start-divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 1rem 0 0.5rem;
+}
+
+/* 幽灵按钮（存档码加载用，低优先级） */
+.btn-ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-muted);
+  padding: 0.4rem 0.8rem;
+  font-size: 0.82rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition);
+}
+
+.btn-ghost:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: var(--text-primary);
+}

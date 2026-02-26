@@ -164,16 +164,24 @@ class AIClient:
     def _ensure_json(self, original_messages: list[dict], response_text: str) -> str:
         """
         验证返回内容是否为合法 JSON。
-        如果不合法，附加 JSON 格式要求后重试一次。
-        再次失败则返回 FALLBACK_CARD_RESPONSE。
+        策略：
+          1. 直接解析
+          2. 尝试从第一次响应中提取 JSON（处理 JSON 后跟额外文字的情况）
+          3. 附加 JSON 强调指令重试一次
+          4. 再次失败则返回 FALLBACK_CARD_RESPONSE
         """
         # 先尝试解析当前返回
         if self._is_valid_json(response_text):
             return response_text
 
+        # 尝试直接从第一次响应提取 JSON（省一次 API 调用）
+        extracted = self._extract_json(response_text)
+        if extracted:
+            logger.info("从第一次响应中成功提取 JSON")
+            return extracted
+
         # JSON 解析失败，附加强调指令重试
         logger.warning(f"AI 返回内容不是合法 JSON，正在重试并附加格式要求...")
-        logger.debug(f"原始返回内容：{response_text[:200]}")
 
         # 构造带有 JSON 强调的消息列表（在最后追加一条 user 消息）
         retry_messages = list(original_messages) + [
@@ -190,13 +198,12 @@ class AIClient:
             retry_text = self._do_call(retry_messages)
             if self._is_valid_json(retry_text):
                 return retry_text
-            else:
-                # 重试后仍然不是合法 JSON，尝试从内容中提取 JSON
-                extracted = self._extract_json(retry_text)
-                if extracted:
-                    return extracted
-                logger.error(f"重试后仍非合法 JSON，返回降级文本。内容：{retry_text[:200]}")
-                return FALLBACK_CARD_RESPONSE
+            # 重试后仍然不是合法 JSON，尝试从内容中提取 JSON
+            extracted = self._extract_json(retry_text)
+            if extracted:
+                return extracted
+            logger.error(f"重试后仍非合法 JSON，返回降级文本。内容：{retry_text[:200]}")
+            return FALLBACK_CARD_RESPONSE
         except Exception as e:
             logger.error(f"JSON 重试调用失败，返回降级文本。错误：{e}")
             return FALLBACK_CARD_RESPONSE
@@ -212,21 +219,32 @@ class AIClient:
     def _extract_json(self, text: str) -> str:
         """
         尝试从文本中提取 JSON 内容。
-        有些模型会在 JSON 外面包一层 ```json ... ``` 代码块。
+        处理两种常见情况：
+          1. JSON 被包在 ```json ... ``` 代码块中
+          2. JSON 合法但后面跟着多余文字（如解释说明）
         """
-        # 去掉 markdown 代码块标记
         text = text.strip()
+
+        # ── 情况1：markdown 代码块 ──
         if text.startswith("```"):
-            # 找到第一个换行，去掉第一行（```json 或 ```）
             lines = text.split("\n")
-            # 去掉首尾代码块标记行
             inner_lines = []
             for line in lines[1:]:
                 if line.strip() == "```":
                     break
                 inner_lines.append(line)
-            text = "\n".join(inner_lines).strip()
+            candidate = "\n".join(inner_lines).strip()
+            if self._is_valid_json(candidate):
+                return candidate
 
-        if self._is_valid_json(text):
-            return text
+        # ── 情况2：JSON 后面跟着多余文字 ──
+        # 找第一个 { 到最后一个 } 之间的内容，尝试解析
+        start = text.find('{')
+        if start != -1:
+            end = text.rfind('}')
+            if end > start:
+                candidate = text[start:end + 1]
+                if self._is_valid_json(candidate):
+                    return candidate
+
         return ""
