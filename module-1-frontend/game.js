@@ -19,6 +19,9 @@ const DEFAULT_STORY = 'khemjira';
 // localStorage 中存 token 用的 key
 const TOKEN_KEY = 'fangame_session_token';
 
+// localStorage 中存完整对话历史用的 key（刷新/继续后恢复所有消息）
+const CHAT_LOG_KEY = 'fangame_chat_log';
+
 /**
  * stat 字段对应的 emoji 图标。
  * hp_max 不单独显示，配合 hp 一起用于进度条。
@@ -65,6 +68,9 @@ let sessionToken = null;
 
 /** 缓存从服务器预加载的存档状态（用于开始界面直接继续） */
 let pendingRestoredState = null;
+
+/** 恢复对话历史时临时禁止写入 localStorage，避免重复保存 */
+let _suppressChatLogSave = false;
 
 /**
  * 当前游戏阶段：'navigation'（导航中）或 'card'（卡片对话中）
@@ -194,6 +200,7 @@ function bindEvents() {
       // 清除 token 并跳到开始界面
       sessionToken = null;
       localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(CHAT_LOG_KEY);
       showStartScreen();
     }
   });
@@ -256,27 +263,33 @@ function showSaveCard(state) {
 }
 
 /**
- * 继续上次游戏：直接用预加载的存档状态进入游戏
+ * 继续上次游戏：先从 localStorage 恢复完整对话历史，再同步游戏状态
  */
 function enterContinueGame() {
   if (!sessionToken || !pendingRestoredState) return;
 
   showGameScreen();
-  applyRestoredState(pendingRestoredState);
+
+  // 先从 localStorage 恢复完整对话历史（所有旁白、NPC回应、玩家输入）
+  const hasChatLog = restoreChatLog();
+
+  // 恢复游戏状态；若已从 localStorage 还原对话，跳过 card_history 避免重复渲染
+  applyRestoredState(pendingRestoredState, hasChatLog);
 
   // 清除缓存，避免重复使用
   pendingRestoredState = null;
 }
 
 /**
- * 恢复已保存的游戏状态（刷新页面或用存档码恢复时调用）
+ * 恢复已保存的游戏状态
  * @param {object} state - 后端返回的 GameState 对象
+ * @param {boolean} skipCardHistory - 已从 localStorage 恢复对话时传 true，跳过 card_history 重复渲染
  */
-function applyRestoredState(state) {
+function applyRestoredState(state, skipCardHistory = false) {
   updateSidebar(state);
 
-  // 恢复卡片阶段的对话历史（card_history 格式：[{role:"player"|"npc", content:"..."}]）
-  if (state.card_history && state.card_history.length > 0) {
+  // 若 localStorage 没有对话历史（如首次或清除后），则用 card_history 兜底
+  if (!skipCardHistory && state.card_history && state.card_history.length > 0) {
     state.card_history.forEach(msg => {
       if (msg.role === 'player') {
         renderMessage('player', msg.content);
@@ -310,9 +323,10 @@ async function startNewGame() {
   try {
     const data = await apiPost('/api/session/new', { story_id: DEFAULT_STORY });
 
-    // 保存 token
+    // 保存 token，清空旧对话历史（防止新游戏显示上局内容）
     sessionToken = data.session_token;
     localStorage.setItem(TOKEN_KEY, sessionToken);
+    localStorage.removeItem(CHAT_LOG_KEY);
 
     // 立刻显示游戏界面和侧边栏
     showGameScreen();
@@ -668,6 +682,11 @@ function renderMessage(type, content, speakerName = null) {
 
   elMessageList.appendChild(el);
   scrollToBottom();
+
+  // 将消息存入 localStorage，供刷新/继续游戏时恢复（恢复中不重复写入）
+  if (!_suppressChatLogSave) {
+    saveToChatLog({ type, content, speakerName });
+  }
 }
 
 /**
@@ -764,6 +783,47 @@ function _appendNavOptionButtons(options) {
  */
 function scrollToBottom() {
   elMessageList.scrollTop = elMessageList.scrollHeight;
+}
+
+/**
+ * 将一条消息追加到 localStorage 对话历史
+ * @param {{ type: string, content: string, speakerName: string|null }} msg
+ */
+function saveToChatLog(msg) {
+  try {
+    const raw = localStorage.getItem(CHAT_LOG_KEY);
+    const log = raw ? JSON.parse(raw) : [];
+    log.push(msg);
+    // 最多保留 500 条，防止 localStorage 容量超限
+    const trimmed = log.length > 500 ? log.slice(-500) : log;
+    localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(trimmed));
+  } catch (e) {
+    // 静默忽略（隐私模式或容量超限时不影响游戏）
+  }
+}
+
+/**
+ * 从 localStorage 恢复完整对话历史，渲染到消息列表
+ * @returns {boolean} 是否成功恢复了历史记录
+ */
+function restoreChatLog() {
+  try {
+    const raw = localStorage.getItem(CHAT_LOG_KEY);
+    if (!raw) return false;
+    const log = JSON.parse(raw);
+    if (!log || log.length === 0) return false;
+
+    // 暂时禁止写入，避免还原时重复保存
+    _suppressChatLogSave = true;
+    log.forEach(({ type, content, speakerName }) => {
+      renderMessage(type, content, speakerName || null);
+    });
+    _suppressChatLogSave = false;
+    return true;
+  } catch (e) {
+    _suppressChatLogSave = false;
+    return false;
+  }
 }
 
 /* ============================================================
