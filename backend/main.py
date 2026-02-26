@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import backend.config  # noqa: F401  导入即执行路径配置
 
 # ── 导入 FastAPI 相关 ──
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -103,7 +104,7 @@ class NavigateRequest(BaseModel):
     """导航移动的请求体"""
     session_token: str                # 玩家会话令牌
     player_input: str                 # 玩家的自然语言输入（如"我往右走"）
-    hint_direction: str | None = None # 前端按钮点击时直接传入方向，跳过 AI 解析
+    hint_direction: Optional[str] = None  # 前端按钮点击时直接传入方向，跳过 AI 解析
 
 
 class CardActionRequest(BaseModel):
