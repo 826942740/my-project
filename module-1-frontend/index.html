@@ -32,21 +32,6 @@
       <!-- 新游戏按钮 -->
       <button id="btn-new-game" class="btn btn-secondary">开始新游戏</button>
 
-      <!-- 换设备用存档码 -->
-      <div class="resume-area">
-        <p class="resume-hint">换设备？输入存档码</p>
-        <div class="resume-row">
-          <input
-            id="input-resume-code"
-            class="resume-input"
-            type="text"
-            placeholder="输入存档码（如 A3X7KM）"
-            maxlength="10"
-          />
-          <button id="btn-resume" class="btn btn-ghost">加载</button>
-        </div>
-        <p id="resume-error" class="resume-error hidden">存档码无效，请重试</p>
-      </div>
     </div>
   </div>
 
@@ -122,8 +107,6 @@
     <header class="topbar">
       <span id="game-title" class="topbar-title">Fangame</span>
       <div class="topbar-actions">
-        <!-- 存档码按钮：点击后显示短码弹窗 -->
-        <button id="btn-save-code" class="btn btn-small">存档码</button>
         <!-- 新游戏按钮 -->
         <button id="btn-new-game-ingame" class="btn btn-small btn-danger">新游戏</button>
       </div>
@@ -192,20 +175,6 @@
     </footer>
 
   </div><!-- /game-screen -->
-
-  <!-- ===== 存档码弹窗 ===== -->
-  <div id="modal-save-code" class="modal hidden">
-    <div class="modal-box">
-      <h3 class="modal-title">存档码</h3>
-      <p class="modal-hint">在其他设备输入此码即可继续游戏</p>
-      <div id="modal-code-display" class="code-display">—</div>
-      <button id="btn-copy-code" class="btn btn-primary">复制</button>
-      <button id="btn-modal-close" class="btn btn-secondary">关闭</button>
-    </div>
-  </div>
-
-  <!-- 弹窗遮罩 -->
-  <div id="modal-overlay" class="modal-overlay hidden"></div>
 
   <!-- 游戏逻辑脚本 -->
   <script src="/static/game.js"></script>

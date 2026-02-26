@@ -97,17 +97,14 @@ let isLoading = false;
 let elStartScreen, elIntroScreen, elGameScreen;
 
 // 开始界面元素
-let elBtnNewGame, elInputResumeCode, elBtnResume, elResumeError;
+let elBtnNewGame;
 
 // 游戏界面主要元素
-let elGameTitle, elBtnSaveCode, elBtnNewGameIngame;
+let elGameTitle, elBtnNewGameIngame;
 let elMessageList, elLoadingIndicator;
 let elSidebarChapter, elSidebarPosition, elSidebarStats;
 let elSidebarCard, elSidebarCardTitle, elSidebarCardRound;
 let elPhaseLabel, elPlayerInput, elBtnSend;
-
-// 弹窗
-let elModalSaveCode, elModalOverlay, elModalCodeDisplay, elBtnCopyCode, elBtnModalClose;
 
 // 手机端状态条
 let elMobileStatsBar;
@@ -132,12 +129,8 @@ document.addEventListener('DOMContentLoaded', () => {
   elGameScreen         = document.getElementById('game-screen');
 
   elBtnNewGame         = document.getElementById('btn-new-game');
-  elInputResumeCode    = document.getElementById('input-resume-code');
-  elBtnResume          = document.getElementById('btn-resume');
-  elResumeError        = document.getElementById('resume-error');
 
   elGameTitle          = document.getElementById('game-title');
-  elBtnSaveCode        = document.getElementById('btn-save-code');
   elBtnNewGameIngame   = document.getElementById('btn-new-game-ingame');
   elMessageList        = document.getElementById('message-list');
   elLoadingIndicator   = document.getElementById('loading-indicator');
@@ -152,12 +145,6 @@ document.addEventListener('DOMContentLoaded', () => {
   elPhaseLabel         = document.getElementById('phase-label');
   elPlayerInput        = document.getElementById('player-input');
   elBtnSend            = document.getElementById('btn-send');
-
-  elModalSaveCode      = document.getElementById('modal-save-code');
-  elModalOverlay       = document.getElementById('modal-overlay');
-  elModalCodeDisplay   = document.getElementById('modal-code-display');
-  elBtnCopyCode        = document.getElementById('btn-copy-code');
-  elBtnModalClose      = document.getElementById('btn-modal-close');
 
   elSaveList           = document.getElementById('save-list');
   elSaveChapterInfo    = document.getElementById('save-chapter-info');
@@ -192,21 +179,6 @@ function bindEvents() {
   // 介绍界面：返回开始界面
   elBtnIntroBack.addEventListener('click', () => showStartScreen());
 
-  // 开始界面：存档码继续
-  elBtnResume.addEventListener('click', () => {
-    const code = elInputResumeCode.value.trim().toUpperCase();
-    if (code.length < 6) {
-      showResumeError('存档码太短，请检查后重试（6位字符）');
-      return;
-    }
-    resumeWithCode(code);
-  });
-
-  // 存档码输入框回车也触发
-  elInputResumeCode.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') elBtnResume.click();
-  });
-
   // 游戏内：发送按钮
   elBtnSend.addEventListener('click', handleSendClick);
 
@@ -215,13 +187,10 @@ function bindEvents() {
     if (e.key === 'Enter' && !e.isComposing) handleSendClick();
   });
 
-  // 游戏内：存档码按钮
-  elBtnSaveCode.addEventListener('click', () => showSaveCode());
-
   // 游戏内：新游戏按钮
   elBtnNewGameIngame.addEventListener('click', () => {
     // 二次确认，避免误触
-    if (confirm('确定要开始新游戏吗？当前进度将丢失（可先保存存档码）')) {
+    if (confirm('确定要开始新游戏吗？当前进度将丢失。')) {
       // 清除 token 并跳到开始界面
       sessionToken = null;
       localStorage.removeItem(TOKEN_KEY);
@@ -229,26 +198,6 @@ function bindEvents() {
     }
   });
 
-  // 弹窗：关闭
-  elBtnModalClose.addEventListener('click', closeModal);
-  elModalOverlay.addEventListener('click', closeModal);
-
-  // 弹窗：复制存档码
-  elBtnCopyCode.addEventListener('click', () => {
-    const code = elModalCodeDisplay.textContent;
-    if (code && code !== '—') {
-      navigator.clipboard.writeText(code)
-        .then(() => {
-          elBtnCopyCode.textContent = '已复制 ✓';
-          setTimeout(() => { elBtnCopyCode.textContent = '复制'; }, 2000);
-        })
-        .catch(() => {
-          // 降级：选中文字让用户手动复制
-          elModalCodeDisplay.focus();
-          document.execCommand('selectAll');
-        });
-    }
-  });
 }
 
 /* ============================================================
@@ -378,33 +327,6 @@ async function startNewGame() {
   } finally {
     elBtnNewGame.disabled = false;
     elBtnNewGame.textContent = '开始新游戏';
-  }
-}
-
-/**
- * 用存档码恢复游戏（换设备时使用）
- * @param {string} code - 6 位存档码（已转大写）
- */
-async function resumeWithCode(code) {
-  elBtnResume.disabled = true;
-  elResumeError.classList.add('hidden');
-
-  try {
-    const data = await apiPost('/api/session/resume', { code });
-
-    // 保存新 token（后端返回字段名为 session_token）
-    sessionToken = data.session_token;
-    localStorage.setItem(TOKEN_KEY, sessionToken);
-
-    // 切换到游戏界面并恢复状态
-    showGameScreen();
-    if (data.state) applyRestoredState(data.state);
-    renderMessage('system', `已恢复存档（码：${code}）`);
-
-  } catch (err) {
-    showResumeError('存档码无效或已过期，请重试');
-  } finally {
-    elBtnResume.disabled = false;
   }
 }
 
@@ -1008,44 +930,6 @@ function setInputEnabled(enabled) {
 }
 
 /* ============================================================
-   存档码弹窗
-   ============================================================ */
-
-/**
- * 获取当前存档码并弹窗显示
- */
-async function showSaveCode() {
-  if (!sessionToken) {
-    renderMessage('warning', '当前没有进行中的游戏');
-    return;
-  }
-
-  // 先弹窗，显示 loading 状态
-  elModalCodeDisplay.textContent = '加载中…';
-  openModal();
-
-  try {
-    const data = await apiGet(`/api/session/code?token=${encodeURIComponent(sessionToken)}`);
-    elModalCodeDisplay.textContent = data.short_code || '获取失败';
-  } catch (err) {
-    elModalCodeDisplay.textContent = '获取失败';
-    console.error('获取存档码失败：', err.message);
-  }
-}
-
-/** 打开弹窗 */
-function openModal() {
-  elModalSaveCode.classList.remove('hidden');
-  elModalOverlay.classList.remove('hidden');
-}
-
-/** 关闭弹窗 */
-function closeModal() {
-  elModalSaveCode.classList.add('hidden');
-  elModalOverlay.classList.add('hidden');
-}
-
-/* ============================================================
    界面切换
    ============================================================ */
 
@@ -1072,12 +956,6 @@ function showGameScreen() {
   elGameScreen.classList.remove('hidden');
   // 聚焦输入框，方便直接打字
   elPlayerInput.focus();
-}
-
-/** 显示存档码错误提示 */
-function showResumeError(msg) {
-  elResumeError.textContent = msg;
-  elResumeError.classList.remove('hidden');
 }
 
 /* ============================================================
