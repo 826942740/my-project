@@ -14,7 +14,7 @@
 const API_BASE = '';  // 与后端同源，使用相对路径
 
 // 默认故事 ID（与后端 stories/ 目录名一致）
-const DEFAULT_STORY = 'dark_forest';
+const DEFAULT_STORY = 'khemjira';
 
 // localStorage 中存 token 用的 key
 const TOKEN_KEY = 'fangame_session_token';
@@ -259,8 +259,8 @@ async function startNewGame() {
   try {
     const data = await apiPost('/api/session/new', { story_id: DEFAULT_STORY });
 
-    // 保存 token
-    sessionToken = data.token;
+    // 保存 token（后端返回字段名为 session_token）
+    sessionToken = data.session_token;
     localStorage.setItem(TOKEN_KEY, sessionToken);
 
     // 切换到游戏界面
@@ -292,8 +292,8 @@ async function resumeWithCode(code) {
   try {
     const data = await apiPost('/api/session/resume', { code });
 
-    // 保存新 token
-    sessionToken = data.token;
+    // 保存新 token（后端返回字段名为 session_token）
+    sessionToken = data.session_token;
     localStorage.setItem(TOKEN_KEY, sessionToken);
 
     // 切换到游戏界面并恢复状态
