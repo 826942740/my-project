@@ -28,8 +28,13 @@ import backend.config  # noqa: F401  导入即执行路径配置
 # ── 导入 FastAPI 相关 ──
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import copy
+
+# 前端目录路径
+FRONTEND_DIR = Path(__file__).parent.parent / "module-1-frontend"
 
 # ── 导入各模块（目录名中的 - 必须写成 _）──
 from module_2_ai.client import AIClient
@@ -71,6 +76,15 @@ save_system = SaveSystem()
 ai_client = AIClient()
 
 logger.info("Fangame 后端服务初始化完成")
+
+# ── 挂载前端静态文件（css、js 等）──
+app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+# ── 根路由：返回前端首页 ──
+@app.get("/")
+async def serve_index():
+    """访问根路径时返回前端 index.html"""
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 # ──────────────────────────────────────────────

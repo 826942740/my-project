@@ -11,7 +11,7 @@
    ============================================================ */
 
 // 后端 API 地址（开发时指向本地）
-const API_BASE = 'http://localhost:8000';
+const API_BASE = '';  // 与后端同源，使用相对路径
 
 // 默认故事 ID（与后端 stories/ 目录名一致）
 const DEFAULT_STORY = 'dark_forest';
