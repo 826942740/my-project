@@ -263,6 +263,18 @@ def build_card_prompt(
     # ── 构建 messages 列表 ──
     messages = [{"role": "system", "content": system_content}]
 
+    # ── Few-shot 示例：展示正确的 JSON 输出格式 ──
+    # 帮助模型记住"必须返回 JSON"，避免只输出旁白文字
+    messages.append({"role": "user", "content": "（示例输入）我大声呵斥它离开"})
+    messages.append({
+        "role": "assistant",
+        "content": (
+            '{"npc_response": "它愣了一下，慢慢向后退了一步，眼神中带着困惑。",'
+            ' "judge": "continue",'
+            ' "judge_reason": "玩家开始对抗但尚未达成胜利条件"}'
+        ),
+    })
+
     # ── 将对话历史转换为 OpenAI messages 格式 ──
     # player → user（玩家的输入）
     # npc    → assistant（NPC 的回应）

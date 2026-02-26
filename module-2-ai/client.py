@@ -108,8 +108,8 @@ class AIClient:
             - 其他错误：直接返回降级文本
         """
         try:
-            # ── 第一次调用 ──
-            response_text = self._do_call(messages)
+            # ── 第一次调用（需要 JSON 时开启强制 JSON 模式）──
+            response_text = self._do_call(messages, force_json=expect_json)
         except APITimeoutError:
             # 超时：等一下再重试一次
             logger.warning("API 请求超时，正在重试（1/1）...")
@@ -146,18 +146,34 @@ class AIClient:
     # 内部辅助方法
     # ──────────────────────────────────────────────
 
-    def _do_call(self, messages: list[dict]) -> str:
+    def _do_call(self, messages: list[dict], force_json: bool = False) -> str:
         """
         实际发起一次 API 请求。
+        force_json=True 时尝试开启 response_format=json_object，
+        若 API 不支持该参数会自动降级为普通调用。
         抛出异常由上层 call() 处理，不在这里捕获。
         """
-        completion = self._client.chat.completions.create(
+        kwargs = dict(
             model=self.model,
             messages=messages,
             max_tokens=self.max_tokens,
             temperature=self.temperature,
             timeout=self.timeout,
         )
+        if force_json:
+            kwargs["response_format"] = {"type": "json_object"}
+
+        try:
+            completion = self._client.chat.completions.create(**kwargs)
+        except Exception as e:
+            # 如果是因为 response_format 不被支持，降级为普通调用
+            if force_json and ("response_format" in str(e) or "400" in str(e)):
+                logger.warning("API 不支持 response_format，降级为普通调用")
+                kwargs.pop("response_format")
+                completion = self._client.chat.completions.create(**kwargs)
+            else:
+                raise
+
         # 取出第一个 choice 的文本内容，去除首尾空白
         return completion.choices[0].message.content.strip()
 
@@ -202,6 +218,18 @@ class AIClient:
             extracted = self._extract_json(retry_text)
             if extracted:
                 return extracted
+
+            # ── 最后兜底：AI 返回纯旁白文字时，包装成 JSON 继续游戏 ──
+            # 例如 AI 只说了 "它突然向前飘了一寸。" 而忘记返回 JSON
+            if retry_text and '{' not in retry_text:
+                logger.warning(f"AI 返回纯文本，包装为 JSON 兜底。内容：{retry_text[:80]}")
+                wrapped = json.dumps(
+                    {"npc_response": retry_text, "judge": "continue",
+                     "judge_reason": "AI返回纯文本，降级continue"},
+                    ensure_ascii=False
+                )
+                return wrapped
+
             logger.error(f"重试后仍非合法 JSON，返回降级文本。内容：{retry_text[:200]}")
             return FALLBACK_CARD_RESPONSE
         except Exception as e:
