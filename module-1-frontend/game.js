@@ -658,53 +658,74 @@ function renderMessage(type, content, speakerName = null) {
 }
 
 /**
- * 渲染导航旁白：正文作为叙事，末尾的 A/B/C 选项渲染为可点击按钮
- * @param {string} content - AI 生成的导航文字（含 A. xxx B. xxx 格式选项）
+ * 渲染导航旁白：正文作为叙事，末尾的选项渲染为可点击按钮
+ *
+ * 支持两种 AI 输出格式：
+ *   格式1（标准）：A. 行动  B. 行动  C. 行动
+ *   格式2（偶发）：**行动1** / **行动2** / **行动3**（加粗+斜杠）
+ *
+ * @param {string} content - AI 生成的导航文字
  */
 function renderNavNarrative(content) {
   if (!content) return;
 
-  // 尝试从文字中分离"正文"和"选项"
-  // 选项格式：A. 行动描述 / A: 行动描述 / A）行动描述
+  // ─── 格式1：A. / B. / C. 标准选项格式 ───
   const optionRegex = /[A-Ca-c][\.：:）)]\s*(.+)/g;
   const optionMatches = [...content.matchAll(optionRegex)];
 
   if (optionMatches.length >= 2) {
-    // 找到选项 → 把正文和选项分开渲染
-    // 正文：第一个选项出现之前的文字
     const firstOptionIndex = content.search(/[A-Ca-c][\.：:）)]/);
     const mainText = content.slice(0, firstOptionIndex).trim();
-
-    if (mainText) {
-      renderMessage('narrative', mainText);
-    }
-
-    // 渲染选项按钮行
-    const el = document.createElement('div');
-    el.classList.add('nav-options');
-
-    optionMatches.forEach((match) => {
-      const label = match[0][0].toUpperCase(); // A / B / C
-      const text  = match[1].trim();
-
-      const btn = document.createElement('button');
-      btn.classList.add('btn', 'nav-option-btn');
-      btn.textContent = `${label}. ${text}`;
-      btn.addEventListener('click', () => {
-        if (isLoading) return;
-        // 点击后直接以选项文字作为玩家输入发送
-        elPlayerInput.value = text;
-        handleSendClick();
-      });
-      el.appendChild(btn);
-    });
-
-    elMessageList.appendChild(el);
-    scrollToBottom();
-  } else {
-    // 没有选项格式 → 普通叙事渲染
-    renderMessage('narrative', content);
+    if (mainText) renderMessage('narrative', mainText);
+    _appendNavOptionButtons(optionMatches.map((m, i) => ({
+      label: m[0][0].toUpperCase(),
+      text:  m[1].trim(),
+    })));
+    return;
   }
+
+  // ─── 格式2：**选项** / **选项** 加粗斜杠格式（AI 偶发）───
+  const boldRegex = /\*\*(.+?)\*\*/g;
+  const boldMatches = [...content.matchAll(boldRegex)];
+
+  if (boldMatches.length >= 2) {
+    const firstBoldIndex = content.indexOf('**');
+    const mainText = content.slice(0, firstBoldIndex).trim();
+    if (mainText) renderMessage('narrative', mainText);
+    const labels = ['A', 'B', 'C', 'D'];
+    _appendNavOptionButtons(boldMatches.map((m, i) => ({
+      label: labels[i] || String(i + 1),
+      text:  m[1].trim(),
+    })));
+    return;
+  }
+
+  // ─── 无可识别选项格式 → 普通叙事渲染 ───
+  renderMessage('narrative', content);
+}
+
+/**
+ * 将选项数组渲染为一排可点击按钮，追加到消息列表
+ * @param {{ label: string, text: string }[]} options
+ */
+function _appendNavOptionButtons(options) {
+  const el = document.createElement('div');
+  el.classList.add('nav-options');
+
+  options.forEach(({ label, text }) => {
+    const btn = document.createElement('button');
+    btn.classList.add('btn', 'nav-option-btn');
+    btn.textContent = `${label}. ${text}`;
+    btn.addEventListener('click', () => {
+      if (isLoading) return;
+      elPlayerInput.value = text;
+      handleSendClick();
+    });
+    el.appendChild(btn);
+  });
+
+  elMessageList.appendChild(el);
+  scrollToBottom();
 }
 
 /**
@@ -959,7 +980,7 @@ async function apiPost(path, body) {
  * @param {number} timeoutMs - 超时毫秒数，默认 30000
  * @returns {Promise<Response>}
  */
-async function fetchWithTimeout(url, options, timeoutMs = 30000) {
+async function fetchWithTimeout(url, options, timeoutMs = 90000) {
   const controller = new AbortController();
   const timerId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -968,7 +989,7 @@ async function fetchWithTimeout(url, options, timeoutMs = 30000) {
     return resp;
   } catch (err) {
     if (err.name === 'AbortError') {
-      throw new Error('请求超时（>30s），请检查网络或后端状态');
+      throw new Error(`请求超时（>${Math.round(timeoutMs / 1000)}s），请检查网络或后端状态`);
     }
     throw err;
   } finally {
