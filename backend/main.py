@@ -101,8 +101,9 @@ class NewGameRequest(BaseModel):
 
 class NavigateRequest(BaseModel):
     """导航移动的请求体"""
-    session_token: str           # 玩家会话令牌
-    player_input: str            # 玩家的自然语言输入（如"我往右走"）
+    session_token: str                # 玩家会话令牌
+    player_input: str                 # 玩家的自然语言输入（如"我往右走"）
+    hint_direction: str | None = None # 前端按钮点击时直接传入方向，跳过 AI 解析
 
 
 class CardActionRequest(BaseModel):
@@ -258,20 +259,26 @@ async def navigate(req: NavigateRequest):
     nav_ctx = engine.get_nav_context(state)
     options = nav_ctx["options"]
 
-    # 解析玩家输入中的方向意图（关键词匹配）
-    direction = parse_direction(req.player_input, options)
+    # 如果前端按钮直接提供了方向，跳过文字解析（最可靠）
+    valid_directions = {opt["direction"] for opt in options}
+    if req.hint_direction and req.hint_direction in valid_directions:
+        direction = req.hint_direction
+        logger.info(f"使用前端提供的方向：{direction}")
+    else:
+        # 解析玩家输入中的方向意图（关键词匹配）
+        direction = parse_direction(req.player_input, options)
 
-    if direction is None:
-        # 关键词匹配失败，用 AI 理解玩家意图
-        logger.info(f"关键词解析方向失败，启用 AI 解析：input={req.player_input!r}")
-        try:
-            parse_messages = build_direction_parse_prompt(req.player_input, options)
-            ai_direction = ai_client.call(parse_messages).strip().lower()
-            if ai_direction in {"right", "down", "diagonal"}:
-                direction = ai_direction
-                logger.info(f"AI 解析方向成功：{direction}")
-        except Exception as e:
-            logger.error(f"AI 解析方向失败：{e}")
+        if direction is None:
+            # 关键词匹配失败，用 AI 理解玩家意图
+            logger.info(f"关键词解析方向失败，启用 AI 解析：input={req.player_input!r}")
+            try:
+                parse_messages = build_direction_parse_prompt(req.player_input, options)
+                ai_direction = ai_client.call(parse_messages).strip().lower()
+                if ai_direction in {"right", "down", "diagonal"}:
+                    direction = ai_direction
+                    logger.info(f"AI 解析方向成功：{direction}")
+            except Exception as e:
+                logger.error(f"AI 解析方向失败：{e}")
 
     if direction is None:
         # AI 也无法解析，返回提示（不中断游戏）
@@ -520,8 +527,10 @@ async def get_nav_narrative(token: str = Query(..., description="会话令牌"))
     if engine.story is None or engine.story["meta"].get("id") != story_id:
         engine.load_story(story_id)
 
+    nav_ctx = engine.get_nav_context(state)
     narrative = generate_nav_narrative(state)
-    return {"narrative": narrative}
+    # 同时返回方向列表，前端按钮可直接绑定方向，无需再做文字解析
+    return {"narrative": narrative, "directions": nav_ctx["options"]}
 
 
 @app.get("/api/health")

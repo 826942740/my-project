@@ -72,6 +72,13 @@ let pendingRestoredState = null;
  */
 let currentPhase = 'navigation';
 
+/**
+ * /api/nav 返回的方向列表，按顺序对应导航旁白中的 A/B/C 选项。
+ * 格式：[{direction: "right", card_title: "...", card_type: "..."}, ...]
+ * 用于按钮点击时直接告知后端方向，绕过文字解析。
+ */
+let currentNavDirections = [];
+
 /** 是否正在等待 AI 响应，期间禁止发送 */
 let isLoading = false;
 
@@ -401,8 +408,9 @@ function handleSendClick() {
 /**
  * 发送玩家输入：根据当前阶段自动选择调用哪个 API
  * @param {string} text - 玩家输入的文字
+ * @param {string|null} hintDirection - 导航阶段可选传入方向（来自按钮绑定），跳过文字解析
  */
-async function sendInput(text) {
+async function sendInput(text, hintDirection = null) {
   if (!sessionToken) {
     renderMessage('warning', '会话已失效，请刷新页面');
     return;
@@ -417,7 +425,7 @@ async function sendInput(text) {
 
   try {
     if (currentPhase === 'navigation') {
-      await handleNavigate(text);
+      await handleNavigate(text, hintDirection);
     } else {
       await handleCardAction(text);
     }
@@ -434,12 +442,12 @@ async function sendInput(text) {
 /**
  * 导航阶段：调用 POST /api/navigate
  * @param {string} playerInput
+ * @param {string|null} hintDirection - 直接指定方向（来自 A/B/C 按钮绑定），跳过后端文字解析
  */
-async function handleNavigate(playerInput) {
-  const data = await apiPost('/api/navigate', {
-    session_token: sessionToken,
-    player_input:  playerInput,
-  });
+async function handleNavigate(playerInput, hintDirection = null) {
+  const body = { session_token: sessionToken, player_input: playerInput };
+  if (hintDirection) body.hint_direction = hintDirection;
+  const data = await apiPost('/api/navigate', body);
 
   // 渲染导航旁白（包含方向解析失败的提示）
   if (data.narrative) {
@@ -625,6 +633,9 @@ async function fetchNavNarrative() {
     // 导航旁白 AI 生成较慢，超时设为 90 秒
     const data = await apiGet(`/api/nav?token=${encodeURIComponent(sessionToken)}`, 90000);
 
+    // 保存方向列表，供按钮点击时直接使用
+    currentNavDirections = data.directions || [];
+
     // 移除加载提示，渲染实际旁白
     loadingEl.remove();
     if (data.narrative) {
@@ -729,9 +740,11 @@ function renderNavNarrative(content) {
     const firstOptionIndex = content.search(/[A-Ca-c][\.：:）)]/);
     const mainText = content.slice(0, firstOptionIndex).trim();
     if (mainText) renderMessage('narrative', mainText);
+    // 将 currentNavDirections[i] 绑定到对应按钮，点击时直接发方向
     _appendNavOptionButtons(optionMatches.map((m, i) => ({
-      label: m[0][0].toUpperCase(),
-      text:  m[1].trim(),
+      label:     m[0][0].toUpperCase(),
+      text:      m[1].trim(),
+      direction: currentNavDirections[i]?.direction || null,
     })));
     return;
   }
@@ -746,8 +759,9 @@ function renderNavNarrative(content) {
     if (mainText) renderMessage('narrative', mainText);
     const labels = ['A', 'B', 'C', 'D'];
     _appendNavOptionButtons(boldMatches.map((m, i) => ({
-      label: labels[i] || String(i + 1),
-      text:  m[1].trim(),
+      label:     labels[i] || String(i + 1),
+      text:      m[1].trim(),
+      direction: currentNavDirections[i]?.direction || null,
     })));
     return;
   }
@@ -760,18 +774,25 @@ function renderNavNarrative(content) {
  * 将选项数组渲染为一排可点击按钮，追加到消息列表
  * @param {{ label: string, text: string }[]} options
  */
+/**
+ * @param {{ label: string, text: string, direction?: string|null }[]} options
+ *   direction 字段仅导航旁白选项携带，点击时直接发给后端跳过文字解析；
+ *   卡片选项没有 direction，走普通输入流程。
+ */
 function _appendNavOptionButtons(options) {
   const el = document.createElement('div');
   el.classList.add('nav-options');
 
-  options.forEach(({ label, text }) => {
+  options.forEach(({ label, text, direction }) => {
     const btn = document.createElement('button');
     btn.classList.add('btn', 'nav-option-btn');
     btn.textContent = `${label}. ${text}`;
     btn.addEventListener('click', () => {
       if (isLoading) return;
-      elPlayerInput.value = text;
-      handleSendClick();
+      elPlayerInput.value = '';
+      // 导航旁白按钮：直接携带方向，绕过文字解析，100% 准确
+      // 卡片按钮：没有 direction，走普通文字输入流程
+      sendInput(text, direction || null);
     });
     el.appendChild(btn);
   });
