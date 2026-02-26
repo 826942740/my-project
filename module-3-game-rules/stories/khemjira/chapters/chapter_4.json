@@ -1,0 +1,7 @@
+{
+  "id": "chapter_4",
+  "name": "灵界·决战",
+  "map_size": {"rows": 4, "cols": 4},
+  "card_pool": ["monsters", "npcs", "discoveries"],
+  "main_story_id": "ending"
+}

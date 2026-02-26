@@ -1,0 +1,7 @@
+{
+  "id": "chapter_1",
+  "name": "曼谷·逃离",
+  "map_size": {"rows": 4, "cols": 4},
+  "card_pool": ["monsters", "npcs", "discoveries"],
+  "main_story_id": "act_1"
+}

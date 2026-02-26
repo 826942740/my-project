@@ -1,0 +1,7 @@
+{
+  "id": "chapter_2",
+  "name": "伊善村·庇护",
+  "map_size": {"rows": 5, "cols": 5},
+  "card_pool": ["monsters", "npcs", "discoveries"],
+  "main_story_id": "act_2"
+}
