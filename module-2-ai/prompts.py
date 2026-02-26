@@ -132,16 +132,17 @@ def build_nav_prompt(
         "main_story":   "前路散发着异样的气息",
     })
 
-    # ── 格式化场景情况（不含方向词）──
+    # ── 格式化场景情况（不含方向词，不含人名）──
     # 将每个可选方向转换为"一件事/一个情况"，由 AI 融合进场景描述
-    # 不暴露方向词（右/下/斜），玩家通过描述的事件来选择
+    # 不暴露方向词（右/下/斜），不暴露 NPC 名字，玩家通过描述的事件来选择
+    # 重要：card_title 可能包含 NPC 名字（如 "Pharan"），
+    #       绝对不能传入 Prompt，否则 AI 会在旁白中复述该名字
     directions_text_lines = []
-    for d in directions:
-        card_title = d.get("card_title", "未知")
+    for idx, d in enumerate(directions):
         card_type = d.get("card_type", "")
         hint = nav_hints.get(card_type, "那里有些不寻常")
-        # 格式："- 神秘商人：远处似乎有人影晃动"
-        directions_text_lines.append(f"- {card_title}：{hint}")
+        # 用匿名序号代替卡片标题，避免 AI 看到人名后复述
+        directions_text_lines.append(f"- 事件{idx + 1}：{hint}")
 
     directions_text = "\n".join(directions_text_lines) if directions_text_lines else "（周围没有可前进的方向）"
 
@@ -162,7 +163,8 @@ def build_nav_prompt(
         f"[规则]\n"
         f"- 将下方列出的几件事自然地融合进一段场景描述，让玩家感受到不止一个选择\n"
         f"- 不提方向词（不说右/左/上/下/斜），不说出卡片类型\n"
-        f"- 不要在旁白中出现任何人物名字（如角色名、NPC名）\n"
+        f"- 【严格禁止】旁白和选项中不得出现任何人物名字、角色名、NPC名、称呼（如"长老""商人""Pharan"等），"
+        f"一律用感官描述代替（如"一个模糊的身影""某种低沉的声音"），违反此条即为错误输出\n"
         f"- 用感官细节（声音、气味、光影、温度、震动）暗示每件事的存在\n"
         f"- 不得在旁白文字中出现任何数值、数字或状态词（如护符、现金、功德等）\n"
         f"- 场景描述后，必须严格按照以下格式列出 {len(directions)} 个选项（禁止使用加粗**、斜杠/、序号1.2.等其他任何格式）：\n"
