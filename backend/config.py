@@ -18,6 +18,10 @@ import os
 import importlib
 import importlib.util
 from pathlib import Path
+from dotenv import load_dotenv
+
+# 加载 backend/.env 文件里的环境变量（API key 等配置）
+load_dotenv(Path(__file__).parent / ".env")
 
 # ── 将项目根目录加入 Python 路径 ──
 ROOT_DIR = Path(__file__).parent.parent
