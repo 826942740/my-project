@@ -388,9 +388,8 @@ async function handleNavigate(playerInput) {
     return;
   }
 
-  // 进入了某张卡片
+  // 进入了某张卡片（场景描述已通过 data.narrative 渲染，这里只切换阶段）
   if (data.entered_card) {
-    renderMessage('narrative', data.entered_card.scene_description);
     enterCardPhase(data.entered_card.title, null);
   }
 
