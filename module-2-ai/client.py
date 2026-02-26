@@ -12,6 +12,7 @@ client.py — OpenAI 兼容 API 客户端
 """
 
 import os
+import re
 import time
 import json
 import logging
@@ -151,8 +152,16 @@ class AIClient:
                 raise
 
         result = completion.choices[0].message.content.strip()
-        logger.debug(f"[AI响应] 前100字：{result[:100]!r}")
-        return result
+
+        # 推理模型（如 MiniMax-M2.5）会在正文前输出 <think>...</think> 思考过程
+        # 剔除后只保留真正的输出内容
+        cleaned = re.sub(r'<think>.*?</think>\s*', '', result, flags=re.DOTALL).strip()
+        if cleaned != result:
+            logger.debug(f"[AI响应] 已剔除 <think> 块，剩余前100字：{cleaned[:100]!r}")
+        else:
+            logger.debug(f"[AI响应] 前100字：{result[:100]!r}")
+
+        return cleaned
 
     def _ensure_json(self, original_messages: list[dict], response_text: str) -> str:
         """
