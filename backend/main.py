@@ -455,9 +455,11 @@ async def card_action(req: CardActionRequest):
             "options": ai_response.get("options", []),
         }
 
-    # 如果主线完成且游戏未结束，推进到下一章节
-    # 注意：先检查 game_over，避免死亡时仍推进章节
-    if card_done and not game_over and card.get("type") == "main_story":
+    # 如果主线胜利且游戏未结束，推进到下一章节
+    # 必须同时满足：卡片结束 + 胜利（outcome=win） + 未死亡 + 是主线卡片
+    # 修复 Bug：之前缺少 outcome == "win" 检查，导致主线失败时也触发章节推进，
+    #          advance_chapter 会重置 position=[1,1] 和 visited，引发位置重置 bug
+    if card_done and outcome == "win" and not game_over and card.get("type") == "main_story":
         try:
             new_state = engine.advance_chapter(new_state)
             logger.info(f"主线完成，章节推进至：{new_state.get('chapter_idx')}")
