@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fangame — AI 文字冒险</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== 开始界面（无 token 时显示）===== -->
+  <div id="start-screen" class="start-screen hidden">
+    <div class="start-box">
+      <h1 class="start-title">⚔️ 黑暗森林</h1>
+      <p class="start-subtitle">AI 驱动的文字冒险游戏</p>
+
+      <!-- 新游戏按钮 -->
+      <button id="btn-new-game" class="btn btn-primary">开始游戏</button>
+
+      <!-- 用存档码继续 -->
+      <div class="resume-area">
+        <p class="resume-hint">已有存档码？</p>
+        <div class="resume-row">
+          <input
+            id="input-resume-code"
+            class="resume-input"
+            type="text"
+            placeholder="输入存档码（如 A3X7KM）"
+            maxlength="10"
+          />
+          <button id="btn-resume" class="btn btn-secondary">继续游戏</button>
+        </div>
+        <p id="resume-error" class="resume-error hidden">存档码无效，请重试</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 主游戏界面 ===== -->
+  <div id="game-screen" class="game-screen hidden">
+
+    <!-- 顶部标题栏 -->
+    <header class="topbar">
+      <span id="game-title" class="topbar-title">Fangame</span>
+      <div class="topbar-actions">
+        <!-- 存档码按钮：点击后显示短码弹窗 -->
+        <button id="btn-save-code" class="btn btn-small">存档码</button>
+        <!-- 新游戏按钮 -->
+        <button id="btn-new-game-ingame" class="btn btn-small btn-danger">新游戏</button>
+      </div>
+    </header>
+
+    <!-- 主体：文本区 + 侧边栏 -->
+    <div class="main-layout">
+
+      <!-- 左侧：文本输出区 -->
+      <div class="text-panel">
+        <!-- 消息列表（自动滚动到底部） -->
+        <div id="message-list" class="message-list"></div>
+
+        <!-- 加载动画（AI 生成中时显示） -->
+        <div id="loading-indicator" class="loading-indicator hidden">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+      </div>
+
+      <!-- 右侧：状态侧边栏 -->
+      <aside class="sidebar">
+        <!-- 章节与位置 -->
+        <div class="sidebar-section sidebar-location">
+          <div id="sidebar-chapter" class="sidebar-chapter">📍 —</div>
+          <div id="sidebar-position" class="sidebar-pos">位置：—</div>
+        </div>
+
+        <hr class="sidebar-divider" />
+
+        <!-- 动态 Stats（由 JS 渲染） -->
+        <div id="sidebar-stats" class="sidebar-stats"></div>
+
+        <!-- 卡片信息（卡片阶段时显示） -->
+        <div id="sidebar-card" class="sidebar-card hidden">
+          <hr class="sidebar-divider" />
+          <div id="sidebar-card-title" class="card-title"></div>
+          <div id="sidebar-card-round" class="card-round"></div>
+        </div>
+      </aside>
+
+    </div><!-- /main-layout -->
+
+    <!-- 底部输入栏 -->
+    <footer class="input-bar">
+      <!-- 阶段标签 -->
+      <span id="phase-label" class="phase-label">导航中</span>
+      <span class="input-arrow">›</span>
+
+      <!-- 文字输入框 -->
+      <input
+        id="player-input"
+        class="player-input"
+        type="text"
+        placeholder="描述你想去的方向…"
+        autocomplete="off"
+        maxlength="200"
+      />
+
+      <!-- 发送按钮 -->
+      <button id="btn-send" class="btn btn-send">发送</button>
+    </footer>
+
+  </div><!-- /game-screen -->
+
+  <!-- ===== 存档码弹窗 ===== -->
+  <div id="modal-save-code" class="modal hidden">
+    <div class="modal-box">
+      <h3 class="modal-title">存档码</h3>
+      <p class="modal-hint">在其他设备输入此码即可继续游戏</p>
+      <div id="modal-code-display" class="code-display">—</div>
+      <button id="btn-copy-code" class="btn btn-primary">复制</button>
+      <button id="btn-modal-close" class="btn btn-secondary">关闭</button>
+    </div>
+  </div>
+
+  <!-- 弹窗遮罩 -->
+  <div id="modal-overlay" class="modal-overlay hidden"></div>
+
+  <!-- 游戏逻辑脚本 -->
+  <script src="game.js"></script>
+</body>
+</html>
