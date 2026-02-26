@@ -12,6 +12,24 @@ prompts.py — Prompt 模板组装
 """
 
 # ──────────────────────────────────────────────
+# 数值字段中文名映射（英文 key → 中文显示名）
+# 注入 Prompt 时使用中文名，避免 AI 将英文字段名输出到旁白
+# ──────────────────────────────────────────────
+
+STAT_NAMES_CN = {
+    "gold":   "金币",
+    "bread":  "面包",
+    "sword":  "利剑",
+    "rope":   "绳索",
+    "torch":  "火把",
+    "key":    "钥匙",
+    "amulet": "护符",
+    "merit":  "功德",
+    "cash":   "现金",
+    "exp":    "经验",
+}
+
+# ──────────────────────────────────────────────
 # 方向中文映射（英文方向名 → 中文显示）
 # ──────────────────────────────────────────────
 
@@ -61,8 +79,9 @@ def format_stats_summary(stats: dict) -> str:
     for key, value in stats.items():
         if key in skip_keys:
             continue
-        # 将 key 直接显示（配置文件里的 key 就是业务名称，如 gold、bread、sword）
-        parts.append(f"{key}: {value}")
+        # 使用中文名显示（避免英文 key 被 AI 直接输出到旁白文字中）
+        cn_name = STAT_NAMES_CN.get(key, key)
+        parts.append(f"{cn_name}: {value}")
 
     return ", ".join(parts) if parts else "（无状态数据）"
 
@@ -144,6 +163,7 @@ def build_nav_prompt(
         f"- 将下方列出的几件事自然地融合进一段场景描述，让玩家感受到不止一个选择\n"
         f"- 不提方向词（不说右/左/上/下/斜），不说出卡片类型\n"
         f"- 用感官细节（声音、气味、光影、温度、震动）暗示每件事的存在\n"
+        f"- 不得在旁白文字中出现任何数值、数字或状态词（如护符、现金、功德等）\n"
         f"- 场景描述后，必须严格按照以下格式列出 {len(directions)} 个选项（禁止使用加粗**、斜杠/、序号1.2.等其他任何格式）：\n"
         f"  A. 行动文字\n"
         f"  B. 行动文字\n"
@@ -254,6 +274,7 @@ def build_card_prompt(
         f"- 同时判断当前局面是否达成胜利或失败条件\n"
         f"- 若已到最大轮数且未分胜负，根据当前局面偏向做出最终判断\n"
         f"- judge=continue 时，必须在 options 提供3个具体行动选项（5-8字，站在玩家视角描述可采取的行动）\n"
+        f"- judge=win 或 lose 时，npc_response 必须是收尾性的最终反应（如灵体消散/离去/态度转变/事件终结），让玩家清楚感受到这段遭遇已经结束；不能仍是进行中的对话\n"
         f"- judge=win 或 lose 时，options 设为空数组 []\n"
         f"- 必须返回 JSON，格式如下（无多余文字，无代码块标记）：\n"
         f"\n"
