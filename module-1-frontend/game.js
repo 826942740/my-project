@@ -414,9 +414,14 @@ async function handleNavigate(playerInput) {
     player_input:  playerInput,
   });
 
-  // 渲染导航旁白
+  // 渲染导航旁白（包含方向解析失败的提示）
   if (data.narrative) {
     renderMessage('narrative', data.narrative);
+  }
+
+  // 方向解析失败：只显示提示，不继续处理（state 未改变）
+  if (data.parse_failed || (!data.moved_to && !data.entered_card && !data.triggered_main_story)) {
+    return;
   }
 
   // 更新 stats

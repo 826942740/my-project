@@ -145,9 +145,9 @@ def build_nav_prompt(
     # ── 组装用户提示（User Prompt）──
     user_content = (
         f"[规则]\n"
-        f"- 根据给定的相邻方向信息，生成一段简短的环境描述，暗示各方向的情况\n"
-        f"- 不直接说出卡片类型（不说'前面有怪物'），而是用感官描述（声音、气味、光线）\n"
-        f"- 在描述末尾用一句话询问玩家想往哪里走\n"
+        f"- 根据给定的相邻方向信息，用感官细节（声音、气味、光影、温度、震动）描绘各方向的异样氛围\n"
+        f"- 不直接说出卡片类型（不说'前面有怪物'），也不要问玩家想往哪里走\n"
+        f"- 用停顿或沉默结尾，让玩家自己感受并决定\n"
         f"\n"
         f"[上下文]\n"
         f"玩家当前位置：{chapter_name}，坐标 ({row}, {col})\n"
@@ -157,7 +157,7 @@ def build_nav_prompt(
         f"{directions_text}\n"
         f"\n"
         f"[任务]\n"
-        f"生成导航旁白。"
+        f"生成导航旁白（不超过80字，不问玩家往哪里走）。"
     )
 
     # ── 返回 OpenAI messages 格式 ──
@@ -280,3 +280,51 @@ def build_card_prompt(
     messages.append({"role": "user", "content": player_input})
 
     return messages
+
+
+# ──────────────────────────────────────────────
+# 方向意图解析 Prompt（关键词匹配失败时的 AI 兜底）
+# ──────────────────────────────────────────────
+
+def build_direction_parse_prompt(player_input: str, options: list[dict]) -> list[dict]:
+    """
+    构建方向意图解析 Prompt，让 AI 理解玩家输入对应哪个方向。
+
+    当关键词匹配失败时调用（例如玩家输入"往有动静的地方走"、"朝哭声的方向"等）。
+    AI 只需返回一个单词：right / down / diagonal / unknown，不得有任何其他文字。
+
+    参数：
+        player_input — 玩家的自然语言输入
+        options      — 当前可选方向列表，每项含 direction、card_title、card_type
+
+    返回：
+        OpenAI messages 格式
+    """
+    # 格式化可选方向列表
+    options_lines = []
+    for o in options:
+        direction_cn = DIRECTION_CN.get(o.get("direction", ""), o.get("direction", ""))
+        title = o.get("card_title", "")
+        hint = o.get("card_type", "")
+        options_lines.append(f"- {o['direction']}（{direction_cn}）")
+
+    options_text = "\n".join(options_lines) if options_lines else "- （无可选方向）"
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是一个方向意图解析器，任务是将玩家的自然语言映射到游戏方向。\n"
+                "只能输出以下之一，不得有任何其他文字：\n"
+                "right / down / diagonal / unknown"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"当前可选方向：\n{options_text}\n\n"
+                f"玩家输入：{player_input}\n\n"
+                "判断玩家最可能想往哪个方向走，输出对应的英文方向名："
+            ),
+        },
+    ]

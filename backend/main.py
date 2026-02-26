@@ -38,7 +38,7 @@ FRONTEND_DIR = Path(__file__).parent.parent / "module-1-frontend"
 
 # ── 导入各模块（目录名中的 - 必须写成 _）──
 from module_2_ai.client import AIClient
-from module_2_ai.prompts import build_nav_prompt, build_card_prompt
+from module_2_ai.prompts import build_nav_prompt, build_card_prompt, build_direction_parse_prompt
 from module_3_game_rules.engine import GameEngine
 from module_3_game_rules.card_runner import process_card_turn, load_card
 from module_3_game_rules.navigator import parse_direction
@@ -270,18 +270,28 @@ async def navigate(req: NavigateRequest):
     nav_ctx = engine.get_nav_context(state)
     options = nav_ctx["options"]
 
-    # 解析玩家输入中的方向意图
+    # 解析玩家输入中的方向意图（关键词匹配）
     direction = parse_direction(req.player_input, options)
 
     if direction is None:
-        # 无法解析方向，返回提示（不中断游戏）
-        # 构建可选方向的提示文字
+        # 关键词匹配失败，用 AI 理解玩家意图
+        logger.info(f"关键词解析方向失败，启用 AI 解析：input={req.player_input!r}")
+        try:
+            parse_messages = build_direction_parse_prompt(req.player_input, options)
+            ai_direction = ai_client.call(parse_messages).strip().lower()
+            if ai_direction in {"right", "down", "diagonal"}:
+                direction = ai_direction
+                logger.info(f"AI 解析方向成功：{direction}")
+        except Exception as e:
+            logger.error(f"AI 解析方向失败：{e}")
+
+    if direction is None:
+        # AI 也无法解析，返回提示（不中断游戏）
         direction_names = {"right": "右", "down": "下", "diagonal": "右下斜"}
         available = [direction_names.get(opt["direction"], opt["direction"]) for opt in options]
         return {
             "phase": "navigation",
-            "parse_failed": True,
-            "message": f"没听清你的方向，目前可选方向有：{'、'.join(available)}，请重新说明。",
+            "narrative": f"（没能理解你的意图，可选方向有：{'、'.join(available)}，请重新描述）",
             "stats": state["stats"],
         }
 
