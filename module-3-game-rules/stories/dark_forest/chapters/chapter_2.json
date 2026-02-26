@@ -1,0 +1,7 @@
+{
+  "id": "chapter_2",
+  "name": "腐化之心",
+  "map_size": { "rows": 5, "cols": 5 },
+  "card_pool": ["monsters", "npcs", "treasures"],
+  "main_story_id": "ending"
+}
