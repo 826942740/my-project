@@ -44,7 +44,6 @@ let sessionToken = null;
 
 /** 缓存从服务器预加载的存档状态（用于开始界面直接继续） */
 let pendingRestoredState = null;
-let pendingNavNarrative = null;
 
 /**
  * 当前游戏阶段：'navigation'（导航中）或 'card'（卡片对话中）
@@ -227,7 +226,6 @@ async function initGame() {
       // 存档有效：缓存状态，显示存档卡片
       sessionToken = storedToken;
       pendingRestoredState = data.state;
-      pendingNavNarrative = data.nav_narrative;
       showSaveCard(data.state);
     } else {
       // 存档已过期
@@ -263,19 +261,17 @@ function enterContinueGame() {
   if (!sessionToken || !pendingRestoredState) return;
 
   showGameScreen();
-  applyRestoredState(pendingRestoredState, pendingNavNarrative);
+  applyRestoredState(pendingRestoredState);
 
   // 清除缓存，避免重复使用
   pendingRestoredState = null;
-  pendingNavNarrative = null;
 }
 
 /**
- * 恢复已保存的游戏状态（刷新页面时调用）
+ * 恢复已保存的游戏状态（刷新页面或用存档码恢复时调用）
  * @param {object} state - 后端返回的 GameState 对象
- * @param {string|null} navNarrative - 导航阶段提示文字
  */
-function applyRestoredState(state, navNarrative) {
+function applyRestoredState(state) {
   updateSidebar(state);
 
   // 根据 in_card 判断当前阶段
@@ -283,9 +279,7 @@ function applyRestoredState(state, navNarrative) {
     enterCardPhase(state.in_card, null); // 恢复时不重新显示进入提示
   } else {
     enterNavPhase();
-    if (navNarrative) {
-      renderNavNarrative(navNarrative);
-    }
+    fetchNavNarrative(); // 异步拉取导航旁白
   }
 }
 
@@ -295,6 +289,7 @@ function applyRestoredState(state, navNarrative) {
 
 /**
  * 开始新游戏：调用 POST /api/session/new
+ * 游戏界面立即显示，导航旁白再单独异步拉取（避免 AI 生成时长阻塞界面）
  */
 async function startNewGame() {
   elBtnNewGame.disabled = true;
@@ -303,25 +298,23 @@ async function startNewGame() {
   try {
     const data = await apiPost('/api/session/new', { story_id: DEFAULT_STORY });
 
-    // 保存 token（后端返回字段名为 session_token）
+    // 保存 token
     sessionToken = data.session_token;
     localStorage.setItem(TOKEN_KEY, sessionToken);
 
-    // 切换到游戏界面
+    // 立刻显示游戏界面和侧边栏
     showGameScreen();
-
-    // 初始化侧边栏和第一条叙事
     if (data.state) updateSidebar(data.state);
-    if (data.nav_narrative) renderNavNarrative(data.nav_narrative);
-
-    // 进入导航阶段
     enterNavPhase();
+
+    // 异步拉取导航旁白（AI 生成，不阻塞界面显示）
+    fetchNavNarrative();
 
   } catch (err) {
     renderMessage('warning', `创建游戏失败：${err.message}`);
   } finally {
     elBtnNewGame.disabled = false;
-    elBtnNewGame.textContent = '开始游戏';
+    elBtnNewGame.textContent = '开始新游戏';
   }
 }
 
@@ -342,7 +335,7 @@ async function resumeWithCode(code) {
 
     // 切换到游戏界面并恢复状态
     showGameScreen();
-    if (data.state) applyRestoredState(data.state, null);
+    if (data.state) applyRestoredState(data.state);
     renderMessage('system', `已恢复存档（码：${code}）`);
 
   } catch (err) {
@@ -439,12 +432,9 @@ async function handleNavigate(playerInput) {
 
   // 进入了某张卡片（场景描述已通过 data.narrative 渲染，这里只切换阶段）
   if (data.entered_card) {
-    enterCardPhase(data.entered_card.title, null);
-  }
-
-  // 显示下一步导航提示（仅非主线触发时有值）
-  if (data.nav_narrative) {
-    renderMessage('system', data.nav_narrative);
+    // 使用 title 或 card_id 作为侧边栏显示名
+    const cardLabel = data.entered_card.title || data.entered_card.card_id || '未知卡片';
+    enterCardPhase(cardLabel, null);
   }
 
   // 更新坐标
@@ -495,8 +485,15 @@ async function handleCardAction(playerInput) {
   // 卡片结束：切回导航阶段
   if (data.card_done) {
     exitCardPhase();
-    if (data.nav_narrative) {
-      renderNavNarrative(data.nav_narrative);
+    if (data.game_over) {
+      // 游戏结束（HP归零等），不再拉取旁白
+      renderMessage('warning', '游戏结束。');
+    } else if (data.game_cleared) {
+      // 全关通关
+      renderMessage('main_story', '恭喜你完成了所有章节！感谢你的游玩。');
+    } else {
+      // 正常卡片结束，异步拉取下一步导航旁白
+      fetchNavNarrative();
     }
   }
 }
@@ -549,6 +546,41 @@ function incrementCardRound() {
   if (match) {
     const next = parseInt(match[1], 10) + 1;
     elSidebarCardRound.textContent = text.replace(/第\s*\d+/, `第 ${next}`);
+  }
+}
+
+/**
+ * 异步拉取当前位置的导航旁白（调用 GET /api/nav）
+ * 在进入导航阶段后单独调用，避免 AI 生成时长阻塞界面显示。
+ * 加载期间显示临时提示消息，完成后替换为实际旁白。
+ */
+async function fetchNavNarrative() {
+  if (!sessionToken) return;
+
+  // 插入临时"正在加载"提示（用 data 属性标记，便于之后移除）
+  const loadingEl = document.createElement('div');
+  loadingEl.classList.add('msg', 'msg-system');
+  loadingEl.dataset.navLoading = 'true';
+  const tagSpan = document.createElement('span');
+  tagSpan.classList.add('tag');
+  tagSpan.textContent = '[系统]';
+  loadingEl.appendChild(tagSpan);
+  loadingEl.appendChild(document.createTextNode(' 正在感知周围环境…'));
+  elMessageList.appendChild(loadingEl);
+  scrollToBottom();
+
+  try {
+    // 导航旁白 AI 生成较慢，超时设为 90 秒
+    const data = await apiGet(`/api/nav?token=${encodeURIComponent(sessionToken)}`, 90000);
+
+    // 移除加载提示，渲染实际旁白
+    loadingEl.remove();
+    if (data.narrative) {
+      renderNavNarrative(data.narrative);
+    }
+  } catch (err) {
+    loadingEl.remove();
+    renderMessage('warning', `导航旁白加载失败（${err.message}），可输入方向继续`);
   }
 }
 
@@ -884,11 +916,11 @@ function showResumeError(msg) {
  * @returns {Promise<object>} 解析后的 JSON 响应
  * @throws {Error} 网络错误或 HTTP 错误
  */
-async function apiGet(path) {
+async function apiGet(path, timeoutMs = 30000) {
   const resp = await fetchWithTimeout(`${API_BASE}${path}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
-  });
+  }, timeoutMs);
 
   if (!resp.ok) {
     const errText = await resp.text().catch(() => '');

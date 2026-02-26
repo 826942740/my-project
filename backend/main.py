@@ -183,15 +183,11 @@ async def new_session(req: NewGameRequest):
     token, short_code = save_system.create_session(story_id, initial_state)
     logger.info(f"新会话已创建：token={token[:8]}...，short_code={short_code}")
 
-    # 生成初始导航旁白（告诉玩家第一步可以去哪里）
-    nav_narrative = generate_nav_narrative(initial_state)
-
     return {
         "session_token": token,
         "short_code": short_code,
         "story_id": story_id,
         "state": initial_state,
-        "nav_narrative": nav_narrative,
     }
 
 
@@ -208,15 +204,9 @@ async def get_state(token: str = Query(..., description="会话令牌")):
     if state is None:
         raise HTTPException(status_code=404, detail="会话不存在，请开始新游戏")
 
-    # 如果在导航阶段，生成当前位置的导航旁白
-    nav_narrative = None
-    if state.get("in_card") is None:
-        nav_narrative = generate_nav_narrative(state)
-
     return {
         "valid": True,
         "state": state,
-        "nav_narrative": nav_narrative,
     }
 
 
@@ -442,16 +432,9 @@ async def card_action(req: CardActionRequest):
         "game_over": game_over,
     }
 
-    # 卡片结束后，生成下一步导航旁白（如果游戏未结束）
+    # 卡片结束时，通知前端是否通关（前端会自行调用 /api/nav 获取导航旁白）
     if card_done and not game_over:
-        if new_state.get("game_cleared"):
-            # 游戏通关
-            response["nav_narrative"] = "恭喜你完成了所有章节！感谢你的游玩。"
-            response["game_cleared"] = True
-        else:
-            # 正常完成，生成导航旁白
-            response["nav_narrative"] = generate_nav_narrative(new_state)
-            response["game_cleared"] = False
+        response["game_cleared"] = bool(new_state.get("game_cleared"))
 
     return response
 
@@ -498,29 +481,39 @@ async def resume_session(req: ResumeRequest):
     if state is None:
         raise HTTPException(status_code=500, detail="存档数据损坏，无法恢复")
 
-    # 如果在导航阶段，生成导航旁白
-    nav_narrative = None
-    if state.get("in_card") is None:
-        try:
-            story_id = state.get("story_id", "dark_forest")
-            if engine.story is None or engine.story["meta"].get("id") != story_id:
-                engine.load_story(story_id)
-            nav_narrative = generate_nav_narrative(state)
-        except Exception as e:
-            logger.error(f"恢复存档时生成导航旁白失败：{e}")
-
     logger.info(f"通过短码恢复游戏：code={code}, token={token[:8]}...")
 
+    # 导航旁白由前端单独调用 /api/nav 异步获取，不在此处生成
     return {
         "session_token": token,
         "state": state,
-        "nav_narrative": nav_narrative,
     }
 
 
 # ──────────────────────────────────────────────
 # 健康检查接口
 # ──────────────────────────────────────────────
+
+@app.get("/api/nav")
+async def get_nav_narrative(token: str = Query(..., description="会话令牌")):
+    """
+    单独获取当前位置的导航旁白（AI 生成，耗时较长）。
+    与 /api/state 分离，让界面能先显示再异步加载旁白。
+    """
+    state = save_system.load_game(token)
+    if state is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    if state.get("in_card") is not None:
+        raise HTTPException(status_code=400, detail="当前在卡片阶段，无需导航旁白")
+
+    story_id = state.get("story_id", "dark_forest")
+    if engine.story is None or engine.story["meta"].get("id") != story_id:
+        engine.load_story(story_id)
+
+    narrative = generate_nav_narrative(state)
+    return {"narrative": narrative}
+
 
 @app.get("/api/health")
 async def health_check():
