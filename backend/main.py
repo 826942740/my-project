@@ -430,19 +430,40 @@ async def card_action(req: CardActionRequest):
             "options": [],
         }
 
-    # 引擎处理本轮（更新对话历史、数值结算、判断卡片结束）
-    card_result = process_card_turn(state, card, req.player_input, ai_response)
-    new_state = card_result["new_state"]
-    card_done = card_result["card_done"]
-    outcome = card_result["outcome"]
-    effects_log = card_result["effects_log"]
-    game_over = card_result["game_over"]
+    # ── 引擎处理本轮（更新对话历史、数值结算、判断卡片结束）──
+    # 外层 try 捕获引擎处理中的意外异常（如 state 字段缺失导致 KeyError），
+    # 避免直接返回 500，改为降级响应让游戏继续
+    try:
+        card_result = process_card_turn(state, card, req.player_input, ai_response)
+        new_state = card_result["new_state"]
+        card_done = card_result["card_done"]
+        outcome = card_result["outcome"]
+        effects_log = card_result["effects_log"]
+        game_over = card_result["game_over"]
+    except Exception as e:
+        # 引擎处理失败，降级为"继续对话"，不让游戏卡死
+        logger.error(f"process_card_turn 异常，降级处理：{e}", exc_info=True)
+        # 保留原 state 不做修改，返回降级响应
+        return {
+            "phase": "card",
+            "npc_response": ai_response.get("npc_response", "（系统异常，请重试）"),
+            "judge": "continue",
+            "card_done": False,
+            "effects_log": [],
+            "stats": state["stats"],
+            "game_over": False,
+            "options": ai_response.get("options", []),
+        }
 
     # 如果主线完成且游戏未结束，推进到下一章节
     # 注意：先检查 game_over，避免死亡时仍推进章节
     if card_done and not game_over and card.get("type") == "main_story":
-        new_state = engine.advance_chapter(new_state)
-        logger.info(f"主线完成，章节推进至：{new_state.get('chapter_idx')}")
+        try:
+            new_state = engine.advance_chapter(new_state)
+            logger.info(f"主线完成，章节推进至：{new_state.get('chapter_idx')}")
+        except Exception as e:
+            # 章节推进失败，记录日志但不中断（卡片已结算成功）
+            logger.error(f"advance_chapter 异常：{e}", exc_info=True)
 
     # 保存新状态
     save_system.save_game(req.session_token, new_state)

@@ -71,6 +71,14 @@ def process_card_turn(state: dict, card: dict, player_input: str, ai_response: d
     import copy
     new_state = copy.deepcopy(state)
 
+    # ── 防御性检查：确保关键字段存在，避免 KeyError 导致 500 ──
+    if "card_history" not in new_state:
+        new_state["card_history"] = []
+    if "card_round" not in new_state:
+        new_state["card_round"] = 0
+    if "stats" not in new_state:
+        new_state["stats"] = {}
+
     # ── 第二步：追加本轮对话到历史记录 ────────────────────────────────────
     npc_response = ai_response.get("npc_response", "")
     judge = ai_response.get("judge", "continue")
