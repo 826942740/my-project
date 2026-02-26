@@ -33,6 +33,27 @@ const STAT_ICONS = {
   rope:   '🪢',
   torch:  '🔦',
   key:    '🗝️',
+  amulet: '🔮',
+  merit:  '✨',
+  cash:   '💵',
+};
+
+/**
+ * stat 字段对应的中文显示名称。
+ * 未在此表中的 stat 直接显示原始 key 名。
+ */
+const STAT_NAMES = {
+  hp:     '生命',
+  hp_max: null,
+  gold:   '金币',
+  bread:  '面包',
+  sword:  '利剑',
+  rope:   '绳索',
+  torch:  '火把',
+  key:    '钥匙',
+  amulet: '护符',
+  merit:  '功德',
+  cash:   '现金',
 };
 
 /* ============================================================
@@ -432,9 +453,17 @@ async function handleNavigate(playerInput) {
 
   // 进入了某张卡片（场景描述已通过 data.narrative 渲染，这里只切换阶段）
   if (data.entered_card) {
-    // 使用 title 或 card_id 作为侧边栏显示名
     const cardLabel = data.entered_card.title || data.entered_card.card_id || '未知卡片';
     enterCardPhase(cardLabel, null);
+
+    // 显示卡片初始行动选项（来自卡片配置，无需 AI 调用，立刻显示）
+    const initialActions = data.entered_card.initial_actions || [];
+    if (initialActions.length >= 2) {
+      _appendNavOptionButtons(initialActions.map((text, i) => ({
+        label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+        text,
+      })));
+    }
   }
 
   // 更新坐标
@@ -469,9 +498,19 @@ async function handleCardAction(playerInput) {
     incrementCardRound();
   }
 
-  // 胜负结算效果日志
+  // 显示 AI 给出的下一步行动选项（judge=continue 时，帮助玩家知道可以怎么做）
+  if (!data.card_done && data.options && data.options.length >= 2) {
+    _appendNavOptionButtons(data.options.map((text, i) => ({
+      label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+      text,
+    })));
+  }
+
+  // 胜负结算效果日志（将英文 stat 名替换为中文显示）
   if (data.effects_log && data.effects_log.length > 0) {
-    const logText = data.effects_log.join('  ');
+    const logText = data.effects_log.map(entry =>
+      entry.replace(/^([a-z_]+)/, name => STAT_NAMES[name] || name)
+    ).join('  ');
     renderMessage('system', `结算：${logText}`);
   }
 
@@ -800,7 +839,7 @@ function updateSidebarStats(stats) {
       <div class="hp-header">
         <div class="hp-label">
           <span class="stat-icon">❤️</span>
-          <span>hp</span>
+          <span>生命</span>
         </div>
         <span class="hp-number">${hpVal} / ${hpMax}</span>
       </div>
@@ -819,14 +858,15 @@ function updateSidebarStats(stats) {
     // 值为 0 或 null 时不显示
     if (!val) continue;
 
-    // 获取图标，未知字段用 📦
+    // 获取图标（未知字段用 📦）和中文名（未知字段直接显示 key）
     const icon = STAT_ICONS[key] !== undefined ? STAT_ICONS[key] : '📦';
+    const name = STAT_NAMES[key] !== undefined ? STAT_NAMES[key] : key;
 
     const row = document.createElement('div');
     row.classList.add('stat-row');
     row.innerHTML = `
       <span class="stat-icon">${icon}</span>
-      <span class="stat-name">${key}</span>
+      <span class="stat-name">${name}</span>
       <span class="stat-value">${val}</span>
     `;
     elSidebarStats.appendChild(row);

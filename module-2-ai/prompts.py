@@ -250,14 +250,18 @@ def build_card_prompt(
         f"\n"
         f"[规则]\n"
         f"- 以角色身份回应玩家，符合角色性格\n"
+        f"- 根据玩家当前状态自然调整角色态度（详见系统提示中的数值影响说明）\n"
         f"- 同时判断当前局面是否达成胜利或失败条件\n"
         f"- 若已到最大轮数且未分胜负，根据当前局面偏向做出最终判断\n"
+        f"- judge=continue 时，必须在 options 提供3个具体行动选项（5-8字，站在玩家视角描述可采取的行动）\n"
+        f"- judge=win 或 lose 时，options 设为空数组 []\n"
         f"- 必须返回 JSON，格式如下（无多余文字，无代码块标记）：\n"
         f"\n"
         f'{{\n'
         f'  "npc_response": "角色的回应文字（1-3句）",\n'
         f'  "judge": "continue 或 win 或 lose",\n'
-        f'  "judge_reason": "一句话说明判断理由（内部调试用，不显示给玩家）"\n'
+        f'  "judge_reason": "一句话说明判断理由（内部调试用，不显示给玩家）",\n'
+        f'  "options": ["行动选项1（5-8字）", "行动选项2", "行动选项3"]\n'
         f'}}'
     )
 
@@ -272,7 +276,8 @@ def build_card_prompt(
         "content": (
             '{"npc_response": "它愣了一下，慢慢向后退了一步，眼神中带着困惑。",'
             ' "judge": "continue",'
-            ' "judge_reason": "玩家开始对抗但尚未达成胜利条件"}'
+            ' "judge_reason": "玩家开始对抗但尚未达成胜利条件",'
+            ' "options": ["继续保持气势逼近", "轻声安抚，转换策略", "退后一步观察反应"]}'
         ),
     })
 

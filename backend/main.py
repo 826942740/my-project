@@ -290,6 +290,11 @@ async def navigate(req: NavigateRequest):
     triggered_main_story = move_result["triggered_main_story"]
     card_id = move_result["card_id"]
 
+    # 获取卡片配置，提取标题和初始行动选项（用于前端显示进入卡片时的选项按钮）
+    card_config = engine.get_current_card(new_state)
+    card_title = card_config.get("title", card_id) if card_config else card_id
+    initial_actions = card_config.get("initial_actions", []) if card_config else []
+
     # 保存新状态
     save_system.save_game(req.session_token, new_state)
     logger.info(
@@ -306,7 +311,9 @@ async def navigate(req: NavigateRequest):
         "triggered_main_story": triggered_main_story,
         "entered_card": {
             "card_id": card_id,
+            "title": card_title,
             "scene_description": card_scene,
+            "initial_actions": initial_actions,
         },
         "stats": new_state["stats"],
     }
@@ -430,6 +437,8 @@ async def card_action(req: CardActionRequest):
         "effects_log": effects_log,
         "stats": new_state["stats"],
         "game_over": game_over,
+        # judge=continue 时返回 AI 给出的下一步行动选项，结束时返回空列表
+        "options": ai_response.get("options", []) if not card_done else [],
     }
 
     # 卡片结束时，通知前端是否通关（前端会自行调用 /api/nav 获取导航旁白）
