@@ -79,8 +79,8 @@ let isLoading = false;
    DOM 元素引用（页面加载后赋值）
    ============================================================ */
 
-// 两个顶层界面
-let elStartScreen, elGameScreen;
+// 三个顶层界面
+let elStartScreen, elIntroScreen, elGameScreen;
 
 // 开始界面元素
 let elBtnNewGame, elInputResumeCode, elBtnResume, elResumeError;
@@ -95,6 +95,9 @@ let elPhaseLabel, elPlayerInput, elBtnSend;
 // 弹窗
 let elModalSaveCode, elModalOverlay, elModalCodeDisplay, elBtnCopyCode, elBtnModalClose;
 
+// 介绍界面
+let elBtnStartAdventure, elBtnIntroBack;
+
 // 开始界面：存档列表
 let elSaveList, elSaveChapterInfo, elSavePosInfo, elBtnContinue;
 
@@ -108,6 +111,7 @@ let elSaveList, elSaveChapterInfo, elSavePosInfo, elBtnContinue;
 document.addEventListener('DOMContentLoaded', () => {
   // --- 缓存 DOM 引用 ---
   elStartScreen        = document.getElementById('start-screen');
+  elIntroScreen        = document.getElementById('intro-screen');
   elGameScreen         = document.getElementById('game-screen');
 
   elBtnNewGame         = document.getElementById('btn-new-game');
@@ -143,6 +147,9 @@ document.addEventListener('DOMContentLoaded', () => {
   elSavePosInfo        = document.getElementById('save-pos-info');
   elBtnContinue        = document.getElementById('btn-continue');
 
+  elBtnStartAdventure  = document.getElementById('btn-start-adventure');
+  elBtnIntroBack       = document.getElementById('btn-intro-back');
+
   // --- 绑定事件 ---
   bindEvents();
 
@@ -157,8 +164,14 @@ function bindEvents() {
   // 开始界面：继续上次游戏
   elBtnContinue.addEventListener('click', () => enterContinueGame());
 
-  // 开始界面：新游戏
-  elBtnNewGame.addEventListener('click', () => startNewGame());
+  // 开始界面：新游戏 → 先显示介绍页
+  elBtnNewGame.addEventListener('click', () => showIntroScreen());
+
+  // 介绍界面：开始冒险 → 真正创建游戏
+  elBtnStartAdventure.addEventListener('click', () => startNewGame());
+
+  // 介绍界面：返回开始界面
+  elBtnIntroBack.addEventListener('click', () => showStartScreen());
 
   // 开始界面：存档码继续
   elBtnResume.addEventListener('click', () => {
@@ -950,12 +963,23 @@ function closeModal() {
 /** 显示开始界面，隐藏游戏界面 */
 function showStartScreen() {
   elStartScreen.classList.remove('hidden');
+  elIntroScreen.classList.add('hidden');
   elGameScreen.classList.add('hidden');
+}
+
+/** 显示游戏介绍界面 */
+function showIntroScreen() {
+  elStartScreen.classList.add('hidden');
+  elIntroScreen.classList.remove('hidden');
+  elGameScreen.classList.add('hidden');
+  // 滚动回顶部（防止上次滚到底部）
+  elIntroScreen.scrollTop = 0;
 }
 
 /** 显示游戏界面，隐藏开始界面 */
 function showGameScreen() {
   elStartScreen.classList.add('hidden');
+  elIntroScreen.classList.add('hidden');
   elGameScreen.classList.remove('hidden');
   // 聚焦输入框，方便直接打字
   elPlayerInput.focus();

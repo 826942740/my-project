@@ -48,6 +48,71 @@
     </div>
   </div>
 
+  <!-- ===== 游戏介绍界面（新游戏时显示）===== -->
+  <div id="intro-screen" class="intro-screen hidden">
+    <div class="intro-box">
+
+      <!-- 标题 -->
+      <div class="intro-header">
+        <div class="intro-story-tag">故事</div>
+        <h1 class="intro-title">เข็มจิรา</h1>
+        <p class="intro-title-sub">Khemjira</p>
+      </div>
+
+      <!-- 世界背景 -->
+      <div class="intro-section">
+        <h2 class="intro-section-title">世界</h2>
+        <p class="intro-text">
+          2025年，泰国。现实与灵界之间有一道极薄的屏障。有些人天生能穿透那道屏障，看见另一边的东西——这种能力往往伴随着代价。
+        </p>
+      </div>
+
+      <!-- 你是谁 -->
+      <div class="intro-section">
+        <h2 class="intro-section-title">你是谁</h2>
+        <p class="intro-text">
+          你叫 <strong>Khem（เข็ม）</strong>，20岁，大学二年级。三岁那年，祖母在你脖子上挂了一块护符，说是保你平安。你戴了十七年，从没想过取下来。
+        </p>
+        <p class="intro-text" style="margin-top: 10px;">
+          直到最近，护符开始变烫。你开始看见不该看见的东西。家族里藏着一个从未被提起的诅咒，而你的21岁生日，只剩几个月。
+        </p>
+      </div>
+
+      <!-- 怎么玩 -->
+      <div class="intro-section">
+        <h2 class="intro-section-title">怎么玩</h2>
+        <ul class="intro-list">
+          <li>每次遇到岔路，用文字描述你想去的方向</li>
+          <li>前方可能有游荡的灵魂、需要帮助的陌生人、或等待被发现的秘密</li>
+          <li>遇到灵体时，用文字描述你的行动——没有唯一正确答案</li>
+          <li>护符能量、积累的功德、手头的现金都会影响遭遇走向</li>
+        </ul>
+      </div>
+
+      <!-- 初始数值 -->
+      <div class="intro-section">
+        <h2 class="intro-section-title">你的状态</h2>
+        <div class="intro-stats">
+          <div class="intro-stat-chip">❤️ 生命 <span>80</span></div>
+          <div class="intro-stat-chip">🔮 护符 <span>60</span></div>
+          <div class="intro-stat-chip">✨ 功德 <span>5</span></div>
+          <div class="intro-stat-chip">💵 现金 <span>200</span></div>
+        </div>
+      </div>
+
+      <!-- 开始按钮 -->
+      <button id="btn-start-adventure" class="btn btn-primary intro-start-btn">
+        开始冒险 →
+      </button>
+
+      <!-- 返回 -->
+      <button id="btn-intro-back" class="btn btn-ghost intro-back-btn">
+        ← 返回
+      </button>
+
+    </div>
+  </div>
+
   <!-- ===== 主游戏界面 ===== -->
   <div id="game-screen" class="game-screen hidden">
 

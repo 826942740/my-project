@@ -223,6 +223,167 @@ input {
 }
 
 /* ============================================================
+   介绍界面（新游戏开场说明）
+   ============================================================ */
+.intro-screen {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg-page);
+  padding: 40px 24px 60px;
+  overflow-y: auto;
+}
+
+.intro-box {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* 顶部标题区 */
+.intro-header {
+  text-align: center;
+  padding: 20px 0 32px;
+  border-bottom: 1px solid #252836;
+  margin-bottom: 28px;
+}
+
+.intro-story-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  color: var(--accent);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  opacity: 0.8;
+}
+
+.intro-title {
+  font-size: 42px;
+  font-weight: 700;
+  color: var(--clr-main-story);
+  letter-spacing: 3px;
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+
+.intro-title-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+}
+
+/* 内容分节 */
+.intro-section {
+  margin-bottom: 28px;
+}
+
+.intro-section-title {
+  font-size: 11px;
+  font-family: var(--font-ui);
+  color: var(--text-muted);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  opacity: 0.7;
+}
+
+.intro-text {
+  font-size: 15px;
+  color: #c8c8c8;
+  line-height: 1.85;
+}
+
+.intro-text strong {
+  color: var(--clr-npc);
+  font-weight: 600;
+}
+
+.intro-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.intro-list li {
+  font-size: 14px;
+  color: #b0b0b0;
+  font-family: var(--font-ui);
+  line-height: 1.6;
+  padding-left: 16px;
+  position: relative;
+}
+
+.intro-list li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: var(--text-muted);
+}
+
+/* 初始数值芯片 */
+.intro-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.intro-stat-chip {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #252836;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-family: var(--font-ui);
+  color: var(--text-sidebar);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.intro-stat-chip span {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* 开始按钮 */
+.intro-start-btn {
+  width: 100%;
+  padding: 14px;
+  font-size: 16px;
+  border-radius: 8px;
+  margin-top: 12px;
+  letter-spacing: 1px;
+}
+
+/* 返回按钮 */
+.intro-back-btn {
+  width: 100%;
+  padding: 10px;
+  font-size: 13px;
+  border-radius: 8px;
+  margin-top: 10px;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .intro-screen {
+    padding: 24px 16px 48px;
+  }
+
+  .intro-title {
+    font-size: 32px;
+  }
+}
+
+/* ============================================================
    主游戏界面整体框架
    ============================================================ */
 .game-screen {
