@@ -9,8 +9,17 @@
 # 读取端口，默认 8768
 PORT=${PORT:-8768}
 
+# 进入项目根目录
+ROOT_DIR="$(dirname "$0")"
+cd "$ROOT_DIR" || exit 1
+
+# 激活虚拟环境（如果存在）
+if [ -f "venv/bin/activate" ]; then
+    source venv/bin/activate
+fi
+
 # 进入 backend 目录
-cd "$(dirname "$0")/backend" || exit 1
+cd backend || exit 1
 
 echo "=============================="
 echo "  Fangame 服务器启动"
@@ -19,5 +28,5 @@ echo "  本机访问：http://localhost:$PORT"
 echo "  局域网/外网：http://<服务器IP>:$PORT"
 echo "=============================="
 
-# 启动服务（--host 0.0.0.0 允许外部访问，生产环境去掉 --reload）
+# 启动服务（--host 0.0.0.0 允许外部访问）
 uvicorn main:app --host 0.0.0.0 --port "$PORT"
