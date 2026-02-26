@@ -5,30 +5,20 @@ client.py — OpenAI 兼容 API 客户端
 所有配置通过环境变量读取，不写入代码。
 
 错误处理策略：
-  - 网络超时：重试 1 次，再失败返回降级文本
-  - JSON 解析失败：重试 1 次并附加 JSON 强调指令，再失败返回降级文本
-  - Rate limit：等待 3 秒后重试 1 次
-  - 其他错误：记录日志，返回降级文本，不中断游戏
+  - 网络超时：重试 1 次，再失败直接抛出异常
+  - JSON 格式不正确：重试 1 次附加格式提示，再失败抛出 ValueError
+  - Rate limit：等待 3 秒后重试 1 次，再失败直接抛出异常
+  - 其他错误：直接抛出，由上层路由处理
 """
 
 import os
 import time
 import json
 import logging
-from openai import OpenAI, APITimeoutError, RateLimitError, APIError
+from openai import OpenAI, APITimeoutError, RateLimitError
 
 # 配置日志，方便排查问题
 logger = logging.getLogger(__name__)
-
-# ──────────────────────────────────────────────
-# 降级文本常量（AI 完全失败时的兜底，保证游戏不中断）
-# ──────────────────────────────────────────────
-
-# 导航旁白降级文本
-FALLBACK_NARRATIVE = "（叙事加载失败，请重试）"
-
-# 卡片 NPC + 裁判降级文本（合法 JSON，默认 continue 避免游戏卡死）
-FALLBACK_CARD_RESPONSE = '{"npc_response": "...", "judge": "continue", "judge_reason": "AI调用失败"}'
 
 
 class AIClient:
@@ -74,7 +64,6 @@ class AIClient:
         self.timeout = float(os.environ.get("AI_TIMEOUT_SECONDS", "30"))
 
         # ── 初始化 OpenAI 客户端 ──
-        # openai>=1.0.0 支持直接传入 base_url，兼容任意 OpenAI 格式 endpoint
         client_kwargs = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url
@@ -93,50 +82,32 @@ class AIClient:
     def call(self, messages: list[dict], expect_json: bool = False) -> str:
         """
         调用 AI API，返回生成的文本字符串。
+        失败时直接抛出异常，由上层路由决定如何响应。
 
         参数：
-            messages    — OpenAI 格式消息列表 [{"role": "system/user/assistant", "content": "..."}]
-            expect_json — True 时要求返回合法 JSON；解析失败会自动重试一次
-
-        返回：
-            AI 生成的文本（已去除首尾空白）；失败时返回降级文本
+            messages    — OpenAI 格式消息列表
+            expect_json — True 时验证返回是否为合法 JSON，失败则重试一次
 
         重试策略：
             - 超时：重试 1 次
             - Rate limit：等待 3 秒重试 1 次
-            - JSON 解析失败：附加 JSON 格式要求后重试 1 次
-            - 其他错误：直接返回降级文本
+            - JSON 格式错误：附加格式要求重试 1 次
+            - 重试仍失败：抛出异常
         """
+        # ── 第一次调用 ──
         try:
-            # ── 第一次调用（需要 JSON 时开启强制 JSON 模式）──
             response_text = self._do_call(messages, force_json=expect_json)
         except APITimeoutError:
-            # 超时：等一下再重试一次
-            logger.warning("API 请求超时，正在重试（1/1）...")
-            try:
-                response_text = self._do_call(messages)
-            except Exception as e:
-                logger.error(f"重试后仍然超时，返回降级文本。错误：{e}")
-                return FALLBACK_NARRATIVE
+            logger.warning("API 请求超时，重试中（1/1）...")
+            # 超时重试一次，再失败直接抛出
+            response_text = self._do_call(messages, force_json=expect_json)
         except RateLimitError:
-            # Rate limit：等 3 秒后重试
             logger.warning("触发 Rate limit，等待 3 秒后重试...")
             time.sleep(3)
-            try:
-                response_text = self._do_call(messages)
-            except Exception as e:
-                logger.error(f"Rate limit 重试失败，返回降级文本。错误：{e}")
-                return FALLBACK_NARRATIVE
-        except APIError as e:
-            # 其他 API 错误（认证失败、服务器错误等）
-            logger.error(f"API 调用失败，返回降级文本。错误：{e}")
-            return FALLBACK_NARRATIVE
-        except Exception as e:
-            # 兜底：其他未知错误
-            logger.error(f"未知错误，返回降级文本。错误：{e}")
-            return FALLBACK_NARRATIVE
+            response_text = self._do_call(messages, force_json=expect_json)
+        # 其他异常（APIError、网络错误等）直接抛出
 
-        # ── 如果需要 JSON，验证格式 ──
+        # ── 验证 JSON 格式 ──
         if expect_json:
             response_text = self._ensure_json(messages, response_text)
 
@@ -148,10 +119,9 @@ class AIClient:
 
     def _do_call(self, messages: list[dict], force_json: bool = False) -> str:
         """
-        实际发起一次 API 请求。
+        实际发起一次 API 请求，抛出异常由上层处理。
         force_json=True 时尝试开启 response_format=json_object，
         若 API 不支持该参数会自动降级为普通调用。
-        抛出异常由上层 call() 处理，不在这里捕获。
         """
         kwargs = dict(
             model=self.model,
@@ -163,10 +133,16 @@ class AIClient:
         if force_json:
             kwargs["response_format"] = {"type": "json_object"}
 
+        logger.debug(
+            f"[AI请求] model={self.model} | force_json={force_json} | "
+            f"messages数量={len(messages)} | "
+            f"最后一条user内容前60字：{next((m['content'][:60] for m in reversed(messages) if m['role']=='user'), '')!r}"
+        )
+
         try:
             completion = self._client.chat.completions.create(**kwargs)
         except Exception as e:
-            # 如果是因为 response_format 不被支持，降级为普通调用
+            # 如果是因为 response_format 不被 API 支持，降级为普通调用
             if force_json and ("response_format" in str(e) or "400" in str(e)):
                 logger.warning("API 不支持 response_format，降级为普通调用")
                 kwargs.pop("response_format")
@@ -174,32 +150,28 @@ class AIClient:
             else:
                 raise
 
-        # 取出第一个 choice 的文本内容，去除首尾空白
-        return completion.choices[0].message.content.strip()
+        result = completion.choices[0].message.content.strip()
+        logger.debug(f"[AI响应] 前100字：{result[:100]!r}")
+        return result
 
     def _ensure_json(self, original_messages: list[dict], response_text: str) -> str:
         """
         验证返回内容是否为合法 JSON。
-        策略：
-          1. 直接解析
-          2. 尝试从第一次响应中提取 JSON（处理 JSON 后跟额外文字的情况）
-          3. 附加 JSON 强调指令重试一次
-          4. 再次失败则返回 FALLBACK_CARD_RESPONSE
+        失败则附加格式要求重试一次。
+        重试后仍不合法则抛出 ValueError，由上层路由处理。
         """
-        # 先尝试解析当前返回
+        # 直接解析
         if self._is_valid_json(response_text):
             return response_text
 
-        # 尝试直接从第一次响应提取 JSON（省一次 API 调用）
+        # 尝试从第一次响应中提取 JSON
         extracted = self._extract_json(response_text)
         if extracted:
             logger.info("从第一次响应中成功提取 JSON")
             return extracted
 
-        # JSON 解析失败，附加强调指令重试
-        logger.warning(f"AI 返回内容不是合法 JSON，正在重试并附加格式要求...")
-
-        # 构造带有 JSON 强调的消息列表（在最后追加一条 user 消息）
+        # 附加格式要求重试一次
+        logger.warning("AI 返回内容不是合法 JSON，附加格式要求重试...")
         retry_messages = list(original_messages) + [
             {
                 "role": "user",
@@ -210,31 +182,20 @@ class AIClient:
             }
         ]
 
-        try:
-            retry_text = self._do_call(retry_messages)
-            if self._is_valid_json(retry_text):
-                return retry_text
-            # 重试后仍然不是合法 JSON，尝试从内容中提取 JSON
-            extracted = self._extract_json(retry_text)
-            if extracted:
-                return extracted
+        retry_text = self._do_call(retry_messages)  # 失败则抛出
 
-            # ── 最后兜底：AI 返回纯旁白文字时，包装成 JSON 继续游戏 ──
-            # 例如 AI 只说了 "它突然向前飘了一寸。" 而忘记返回 JSON
-            if retry_text and '{' not in retry_text:
-                logger.warning(f"AI 返回纯文本，包装为 JSON 兜底。内容：{retry_text[:80]}")
-                wrapped = json.dumps(
-                    {"npc_response": retry_text, "judge": "continue",
-                     "judge_reason": "AI返回纯文本，降级continue"},
-                    ensure_ascii=False
-                )
-                return wrapped
+        if self._is_valid_json(retry_text):
+            return retry_text
 
-            logger.error(f"重试后仍非合法 JSON，返回降级文本。内容：{retry_text[:200]}")
-            return FALLBACK_CARD_RESPONSE
-        except Exception as e:
-            logger.error(f"JSON 重试调用失败，返回降级文本。错误：{e}")
-            return FALLBACK_CARD_RESPONSE
+        extracted = self._extract_json(retry_text)
+        if extracted:
+            return extracted
+
+        # 重试后仍无效，抛出异常
+        raise ValueError(
+            f"AI 返回内容无法解析为 JSON（已重试一次）。"
+            f"内容前100字：{retry_text[:100]}"
+        )
 
     def _is_valid_json(self, text: str) -> bool:
         """检查字符串是否为合法 JSON"""
@@ -249,7 +210,7 @@ class AIClient:
         尝试从文本中提取 JSON 内容。
         处理两种常见情况：
           1. JSON 被包在 ```json ... ``` 代码块中
-          2. JSON 合法但后面跟着多余文字（如解释说明）
+          2. JSON 合法但后面跟着多余文字
         """
         text = text.strip()
 
@@ -266,7 +227,6 @@ class AIClient:
                 return candidate
 
         # ── 情况2：JSON 后面跟着多余文字 ──
-        # 找第一个 { 到最后一个 } 之间的内容，尝试解析
         start = text.find('{')
         if start != -1:
             end = text.rfind('}')

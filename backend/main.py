@@ -46,9 +46,12 @@ from module_4_save_system.session import SaveSystem
 
 # ── 配置日志 ──
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
+# httpx 的 DEBUG 日志太多（每次请求都打印 header），单独设为 INFO
+logging.getLogger("httpx").setLevel(logging.INFO)
+logging.getLogger("watchfiles").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
@@ -130,30 +133,19 @@ def get_meta(story_id: str) -> dict:
 def generate_nav_narrative(state: dict) -> str:
     """
     生成导航旁白文字（调用 AI）。
-
-    导航旁白：玩家完成卡片后，AI 根据周围格子的卡片信息，
-    用感官语言（声音、气味、光线）描述环境，暗示各方向情况。
-
-    失败时返回降级文本，保证游戏不中断。
+    失败时直接抛出异常，由上层路由处理。
     """
-    try:
-        # 获取当前章节和导航上下文
-        nav_ctx = engine.get_nav_context(state)
-        chapter = engine.get_current_chapter(state)
+    nav_ctx = engine.get_nav_context(state)
+    chapter = engine.get_current_chapter(state)
 
-        # 构建导航 Prompt 并调用 AI
-        messages = build_nav_prompt(
-            meta=get_meta(state["story_id"]),
-            chapter_name=chapter.get("name", "未知章节"),
-            position=tuple(state["position"]),
-            stats=state["stats"],
-            directions=nav_ctx["options"],
-        )
-        return ai_client.call(messages)
-
-    except Exception as e:
-        logger.error(f"生成导航旁白失败：{e}")
-        return "（叙事加载失败，请继续你的旅程）"
+    messages = build_nav_prompt(
+        meta=get_meta(state["story_id"]),
+        chapter_name=chapter.get("name", "未知章节"),
+        position=tuple(state["position"]),
+        stats=state["stats"],
+        directions=nav_ctx["options"],
+    )
+    return ai_client.call(messages)
 
 
 # ──────────────────────────────────────────────
@@ -250,6 +242,12 @@ async def navigate(req: NavigateRequest):
     state = save_system.load_game(req.session_token)
     if state is None:
         raise HTTPException(status_code=404, detail="会话不存在，请开始新游戏")
+
+    logger.debug(
+        f"[navigate] token={req.session_token[:8]}... | "
+        f"位置={state['position']} | in_card={state.get('in_card')} | "
+        f"input={req.player_input!r}"
+    )
 
     # 验证当前阶段：必须是导航阶段（in_card 为 None）
     if state.get("in_card") is not None:
@@ -358,6 +356,12 @@ async def card_action(req: CardActionRequest):
     state = save_system.load_game(req.session_token)
     if state is None:
         raise HTTPException(status_code=404, detail="会话不存在，请开始新游戏")
+
+    logger.debug(
+        f"[card_action] token={req.session_token[:8]}... | "
+        f"卡片={state.get('in_card')} | 轮数={state.get('card_round', 0)} | "
+        f"input={req.player_input!r}"
+    )
 
     # 验证当前阶段：必须是卡片阶段（in_card 不为 None）
     if state.get("in_card") is None:
