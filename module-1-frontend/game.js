@@ -436,19 +436,14 @@ async function handleNavigate(playerInput, hintDirection = null) {
     return;
   }
 
-  // 进入了某张卡片（场景描述已通过 data.narrative 渲染，这里只切换阶段）
+  // 进入了某张卡片：切换 UI 阶段，异步拉取 AI 入场叙事
   if (data.entered_card) {
     const cardLabel = data.entered_card.title || data.entered_card.card_id || '未知卡片';
     enterCardPhase(cardLabel, null);
 
-    // 显示卡片初始行动选项（来自卡片配置，无需 AI 调用，立刻显示）
+    // 异步拉取 AI 入场叙事，加载完成后再显示初始行动选项
     const initialActions = data.entered_card.initial_actions || [];
-    if (initialActions.length >= 2) {
-      _appendNavOptionButtons(initialActions.map((text, i) => ({
-        label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
-        text,
-      })));
-    }
+    fetchCardEntryNarrative(initialActions);
   }
 
   // 更新坐标
@@ -608,6 +603,49 @@ async function fetchNavNarrative() {
   } catch (err) {
     loadingEl.remove();
     renderMessage('warning', `导航旁白加载失败（${err.message}），可输入方向继续`);
+  }
+}
+
+/**
+ * 异步拉取卡片入场叙事（AI 生成，进入卡片后调用）
+ * 与导航旁白同理：先显示加载提示，AI 生成完成后替换为实际叙事，
+ * 最后显示初始行动选项按钮，保证叙事在选项之前出现。
+ * @param {string[]} initialActions - 卡片配置里的初始行动选项文字数组
+ */
+async function fetchCardEntryNarrative(initialActions) {
+  if (!sessionToken) return;
+
+  // 插入临时加载提示
+  const loadingEl = document.createElement('div');
+  loadingEl.classList.add('msg', 'msg-system');
+  const tagSpan = document.createElement('span');
+  tagSpan.classList.add('tag');
+  tagSpan.textContent = '[系统]';
+  loadingEl.appendChild(tagSpan);
+  loadingEl.appendChild(document.createTextNode(' 正在进入场景…'));
+  elMessageList.appendChild(loadingEl);
+  scrollToBottom();
+
+  try {
+    // 卡片入场叙事 AI 生成，超时设为 90 秒
+    const data = await apiGet(`/api/card_entry?token=${encodeURIComponent(sessionToken)}`, 90000);
+    loadingEl.remove();
+
+    // 渲染 AI 生成的入场叙事
+    if (data.narrative) {
+      renderMessage('narrative', data.narrative);
+    }
+  } catch (err) {
+    loadingEl.remove();
+    renderMessage('warning', `入场叙事加载失败（${err.message}），可直接输入行动`);
+  } finally {
+    // 无论成功或失败，都在叙事之后显示初始行动选项
+    if (initialActions.length >= 2) {
+      _appendNavOptionButtons(initialActions.map((text, i) => ({
+        label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+        text,
+      })));
+    }
   }
 }
 

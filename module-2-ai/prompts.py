@@ -325,6 +325,63 @@ def build_card_prompt(
 
 
 # ──────────────────────────────────────────────
+# 卡片入场叙事 Prompt（进入卡片时的过渡描述）
+# ──────────────────────────────────────────────
+
+def build_card_entry_prompt(
+    meta: dict,
+    card: dict,
+    stats: dict,
+    player_choice_text: str,
+) -> list[dict]:
+    """
+    构建卡片入场叙事 Prompt。
+
+    玩家选择了某个方向进入卡片后，AI 基于玩家的行动和遭遇内容，
+    生成一段自然衔接的入场描述，将导航情景过渡到卡片遭遇。
+    避免直接使用 JSON 里的静态 scene_description（可能与导航旁白设定冲突）。
+
+    参数：
+        meta               — 故事包 meta.json 内容
+        card               — 当前卡片完整配置
+        stats              — 玩家当前状态
+        player_choice_text — 玩家刚才选择的行动文字（如"靠近橙色灯光处"）
+
+    返回：
+        OpenAI messages 格式
+    """
+    story_title = meta.get("title", "未知故事")
+    ai_system_prompt = meta.get("ai_system_prompt", "")
+    language = meta.get("language", "zh")
+
+    # 场景参考：提供给 AI 作为遭遇内容的参考，但不要求照搬
+    scene_ref = card.get("scene_description", "")
+
+    system_content = (
+        f"你是《{story_title}》世界的旁白者。{ai_system_prompt}\n"
+        f"语言：{language}，输出2-3句（约40-60字）。"
+    )
+
+    user_content = (
+        f"[任务]\n"
+        f"玩家做出了行动：「{player_choice_text}」\n"
+        f"紧接着，他进入了以下遭遇（仅供参考，用自己的语言重新描述，不要照搬）：\n"
+        f"{scene_ref}\n"
+        f"\n"
+        f"[规则]\n"
+        f"- 写2-3句入场叙述，从玩家的行动自然过渡到遭遇场景\n"
+        f"- 不照搬场景参考的文字，要与玩家刚才的行动衔接\n"
+        f"- 只写纯叙事，不写行动选项，不用问句结尾\n"
+        f"- 不提任何数值（护符值、功德、现金等）"
+    )
+
+    return [
+        {"role": "system", "content": system_content},
+        {"role": "user",   "content": user_content},
+    ]
+
+
+# ──────────────────────────────────────────────
 # 方向意图解析 Prompt（关键词匹配失败时的 AI 兜底）
 # ──────────────────────────────────────────────
 

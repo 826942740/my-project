@@ -40,7 +40,7 @@ FRONTEND_DIR = Path(__file__).parent.parent / "module-1-frontend"
 
 # ── 导入各模块（目录名中的 - 必须写成 _）──
 from module_2_ai.client import AIClient
-from module_2_ai.prompts import build_nav_prompt, build_card_prompt, build_direction_parse_prompt
+from module_2_ai.prompts import build_nav_prompt, build_card_prompt, build_direction_parse_prompt, build_card_entry_prompt
 from module_3_game_rules.engine import GameEngine
 from module_3_game_rules.card_runner import process_card_turn, load_card
 from module_3_game_rules.navigator import parse_direction
@@ -311,6 +311,9 @@ async def navigate(req: NavigateRequest):
     card_title = card_config.get("title", card_id) if card_config else card_id
     initial_actions = card_config.get("initial_actions", []) if card_config else []
 
+    # 记录玩家本次导航选择文字，供卡片入场叙事 AI 使用（衔接导航情景）
+    new_state["last_nav_input"] = req.player_input
+
     # 保存新状态
     save_system.save_game(req.session_token, new_state)
     logger.info(
@@ -335,11 +338,9 @@ async def navigate(req: NavigateRequest):
     }
 
     if triggered_main_story:
-        # 触发主线：返回主线场景描述，不生成导航旁白
+        # 主线剧情：直接返回静态场景描述（主线开场是精心撰写的固定文字）
         response["narrative"] = card_scene
-    else:
-        # 普通移动：生成进入新卡片前的简短导航旁白（可选，这里直接返回场景描述）
-        response["narrative"] = card_scene
+    # 普通卡片：不返回静态场景，由前端调 /api/card_entry 获取 AI 生成的入场叙事
 
     return response
 
@@ -570,6 +571,44 @@ async def get_nav_narrative(token: str = Query(..., description="会话令牌"))
     narrative = generate_nav_narrative(state)
     # 同时返回方向列表，前端按钮可直接绑定方向，无需再做文字解析
     return {"narrative": narrative, "directions": nav_ctx["options"]}
+
+
+@app.get("/api/card_entry")
+async def get_card_entry_narrative(token: str = Query(..., description="会话令牌")):
+    """
+    获取卡片入场叙事（AI 动态生成）。
+
+    玩家进入卡片后由前端异步调用，与 navigate 响应分离，不阻塞移动操作。
+    AI 根据玩家的导航行动和卡片遭遇内容，生成自然衔接的入场描述，
+    避免静态 scene_description 与导航旁白设定冲突。
+    """
+    state = save_system.load_game(token)
+    if state is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    if state.get("in_card") is None:
+        raise HTTPException(status_code=400, detail="当前不在卡片中，无需入场叙事")
+
+    story_id = state.get("story_id", "khemjira")
+    if engine.story is None or engine.story["meta"].get("id") != story_id:
+        engine.load_story(story_id)
+
+    card = engine.get_current_card(state)
+    if card is None:
+        raise HTTPException(status_code=500, detail=f"找不到卡片配置：{state.get('in_card')}")
+
+    # 读取玩家上次的导航选择文字（由 navigate 存入 state）
+    player_choice = state.get("last_nav_input", "")
+
+    messages = build_card_entry_prompt(
+        meta=get_meta(story_id),
+        card=card,
+        stats=state["stats"],
+        player_choice_text=player_choice,
+    )
+    narrative = ai_client.call(messages)
+    logger.info(f"卡片入场叙事生成：token={token[:8]}..., 卡片={state['in_card']}")
+    return {"narrative": narrative}
 
 
 @app.get("/api/health")
