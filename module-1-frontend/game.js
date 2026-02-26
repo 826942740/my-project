@@ -284,7 +284,7 @@ function applyRestoredState(state, navNarrative) {
   } else {
     enterNavPhase();
     if (navNarrative) {
-      renderMessage('narrative', navNarrative);
+      renderNavNarrative(navNarrative);
     }
   }
 }
@@ -312,7 +312,7 @@ async function startNewGame() {
 
     // 初始化侧边栏和第一条叙事
     if (data.state) updateSidebar(data.state);
-    if (data.nav_narrative) renderMessage('narrative', data.nav_narrative);
+    if (data.nav_narrative) renderNavNarrative(data.nav_narrative);
 
     // 进入导航阶段
     enterNavPhase();
@@ -416,7 +416,7 @@ async function handleNavigate(playerInput) {
 
   // 渲染导航旁白（包含方向解析失败的提示）
   if (data.narrative) {
-    renderMessage('narrative', data.narrative);
+    renderNavNarrative(data.narrative);
   }
 
   // 方向解析失败：只显示提示，不继续处理（state 未改变）
@@ -495,9 +495,8 @@ async function handleCardAction(playerInput) {
   // 卡片结束：切回导航阶段
   if (data.card_done) {
     exitCardPhase();
-    // 显示导航提示
     if (data.nav_narrative) {
-      renderMessage('system', data.nav_narrative);
+      renderNavNarrative(data.nav_narrative);
     }
   }
 }
@@ -624,6 +623,56 @@ function renderMessage(type, content, speakerName = null) {
 
   elMessageList.appendChild(el);
   scrollToBottom();
+}
+
+/**
+ * 渲染导航旁白：正文作为叙事，末尾的 A/B/C 选项渲染为可点击按钮
+ * @param {string} content - AI 生成的导航文字（含 A. xxx B. xxx 格式选项）
+ */
+function renderNavNarrative(content) {
+  if (!content) return;
+
+  // 尝试从文字中分离"正文"和"选项"
+  // 选项格式：A. 行动描述 / A: 行动描述 / A）行动描述
+  const optionRegex = /[A-Ca-c][\.：:）)]\s*(.+)/g;
+  const optionMatches = [...content.matchAll(optionRegex)];
+
+  if (optionMatches.length >= 2) {
+    // 找到选项 → 把正文和选项分开渲染
+    // 正文：第一个选项出现之前的文字
+    const firstOptionIndex = content.search(/[A-Ca-c][\.：:）)]/);
+    const mainText = content.slice(0, firstOptionIndex).trim();
+
+    if (mainText) {
+      renderMessage('narrative', mainText);
+    }
+
+    // 渲染选项按钮行
+    const el = document.createElement('div');
+    el.classList.add('nav-options');
+
+    optionMatches.forEach((match) => {
+      const label = match[0][0].toUpperCase(); // A / B / C
+      const text  = match[1].trim();
+
+      const btn = document.createElement('button');
+      btn.classList.add('btn', 'nav-option-btn');
+      btn.textContent = `${label}. ${text}`;
+      btn.addEventListener('click', () => {
+        if (isLoading) return;
+        // 点击后直接以选项文字作为玩家输入发送
+        elPlayerInput.value = text;
+        handleSendClick();
+      });
+      el.appendChild(btn);
+    });
+
+    elMessageList.appendChild(el);
+    scrollToBottom();
+  } else {
+    // 没有选项格式 → 普通叙事渲染
+    renderMessage('narrative', content);
+  }
 }
 
 /**

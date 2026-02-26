@@ -113,20 +113,16 @@ def build_nav_prompt(
         "main_story":   "前路散发着异样的气息",
     })
 
-    # ── 格式化方向信息 ──
-    # 将方向列表转为 Prompt 可读的文字
-    # 使用 nav_hints 将卡片类型转换为感官描述，不直接暴露类型名
+    # ── 格式化场景情况（不含方向词）──
+    # 将每个可选方向转换为"一件事/一个情况"，由 AI 融合进场景描述
+    # 不暴露方向词（右/下/斜），玩家通过描述的事件来选择
     directions_text_lines = []
     for d in directions:
-        direction_cn = DIRECTION_CN.get(d.get("direction", ""), d.get("direction", "未知方向"))
         card_title = d.get("card_title", "未知")
         card_type = d.get("card_type", "")
-
-        # 用感官提示替代直白的类型名
         hint = nav_hints.get(card_type, "那里有些不寻常")
-
-        # 格式："右方 → 神秘商人（远处似乎有人影晃动）"
-        directions_text_lines.append(f"{direction_cn} → {card_title}（{hint}）")
+        # 格式："- 神秘商人：远处似乎有人影晃动"
+        directions_text_lines.append(f"- {card_title}：{hint}")
 
     directions_text = "\n".join(directions_text_lines) if directions_text_lines else "（周围没有可前进的方向）"
 
@@ -145,19 +141,21 @@ def build_nav_prompt(
     # ── 组装用户提示（User Prompt）──
     user_content = (
         f"[规则]\n"
-        f"- 根据给定的相邻方向信息，用感官细节（声音、气味、光影、温度、震动）描绘各方向的异样氛围\n"
-        f"- 不直接说出卡片类型（不说'前面有怪物'），也不要问玩家想往哪里走\n"
-        f"- 用停顿或沉默结尾，让玩家自己感受并决定\n"
+        f"- 将下方列出的几件事自然地融合进一段场景描述，让玩家感受到不止一个选择\n"
+        f"- 不提方向词（不说右/左/上/下/斜），不说出卡片类型\n"
+        f"- 用感官细节（声音、气味、光影、温度、震动）暗示每件事的存在\n"
+        f"- 场景描述后，以简短的问句形式列出 {len(directions)} 个选项（A/B/C），每个选项对应一件事，让玩家知道可以怎么行动\n"
+        f"- 选项文字要简洁（5-10字），描述玩家的行动而非方向\n"
         f"\n"
         f"[上下文]\n"
         f"玩家当前位置：{chapter_name}，坐标 ({row}, {col})\n"
         f"玩家状态：{stats_summary}\n"
         f"\n"
-        f"相邻方向信息：\n"
+        f"当前场景可以关注的事：\n"
         f"{directions_text}\n"
         f"\n"
         f"[任务]\n"
-        f"生成导航旁白（不超过80字，不问玩家往哪里走）。"
+        f"生成场景描述 + 行动选项（总字数不超过120字）。"
     )
 
     # ── 返回 OpenAI messages 格式 ──
@@ -312,13 +310,11 @@ def build_direction_parse_prompt(player_input: str, options: list[dict]) -> list
     返回：
         OpenAI messages 格式
     """
-    # 格式化可选方向列表
+    # 格式化可选选项（用事件标题对应方向，不显示方向词给 AI 解读）
     options_lines = []
     for o in options:
-        direction_cn = DIRECTION_CN.get(o.get("direction", ""), o.get("direction", ""))
-        title = o.get("card_title", "")
-        hint = o.get("card_type", "")
-        options_lines.append(f"- {o['direction']}（{direction_cn}）")
+        title = o.get("card_title", "未知")
+        options_lines.append(f"- [{o['direction']}] 对应事件：「{title}」")
 
     options_text = "\n".join(options_lines) if options_lines else "- （无可选方向）"
 
@@ -326,7 +322,7 @@ def build_direction_parse_prompt(player_input: str, options: list[dict]) -> list
         {
             "role": "system",
             "content": (
-                "你是一个方向意图解析器，任务是将玩家的自然语言映射到游戏方向。\n"
+                "你是一个游戏意图解析器，根据玩家描述的行动，判断玩家想去哪个事件。\n"
                 "只能输出以下之一，不得有任何其他文字：\n"
                 "right / down / diagonal / unknown"
             ),
@@ -334,9 +330,9 @@ def build_direction_parse_prompt(player_input: str, options: list[dict]) -> list
         {
             "role": "user",
             "content": (
-                f"当前可选方向：\n{options_text}\n\n"
-                f"玩家输入：{player_input}\n\n"
-                "判断玩家最可能想往哪个方向走，输出对应的英文方向名："
+                f"当前场景可选事件：\n{options_text}\n\n"
+                f"玩家输入：{player_input!r}\n\n"
+                "判断玩家最可能想去哪个事件，输出对应的方向标识（right/down/diagonal/unknown）："
             ),
         },
     ]

@@ -749,6 +749,37 @@ input {
   margin: 1rem 0 0.5rem;
 }
 
+/* ============================================================
+   导航选项按钮行
+   ============================================================ */
+
+/* 选项按钮容器：横向排列，可换行 */
+.nav-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+/* 单个选项按钮 */
+.nav-option-btn {
+  background: rgba(124, 106, 245, 0.1);
+  border: 1px solid rgba(124, 106, 245, 0.35);
+  color: #c4b9f8;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  font-family: var(--font-ui);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+  text-align: left;
+}
+
+.nav-option-btn:hover {
+  background: rgba(124, 106, 245, 0.25);
+  border-color: rgba(124, 106, 245, 0.6);
+}
+
 /* 幽灵按钮（存档码加载用，低优先级） */
 .btn-ghost {
   background: transparent;
