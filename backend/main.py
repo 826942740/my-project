@@ -14,6 +14,7 @@ main.py — FastAPI 后端主入口
 
 import sys
 import json
+import random
 import logging
 from pathlib import Path
 
@@ -102,9 +103,10 @@ class NewGameRequest(BaseModel):
 
 class NavigateRequest(BaseModel):
     """导航移动的请求体"""
-    session_token: str                # 玩家会话令牌
-    player_input: str                 # 玩家的自然语言输入（如"我往右走"）
-    hint_direction: Optional[str] = None  # 前端按钮点击时直接传入方向，跳过 AI 解析
+    session_token: str                       # 玩家会话令牌
+    player_input: str                        # 玩家的自然语言输入（如"我往右走"）
+    hint_direction: Optional[str] = None     # 按钮点击时直接传入方向，跳过 AI 解析
+    nav_option_hints: Optional[list] = None  # 旁白选项文字[{direction,text}]，辅助语义匹配
 
 
 class CardActionRequest(BaseModel):
@@ -273,7 +275,11 @@ async def navigate(req: NavigateRequest):
             # 关键词匹配失败，用 AI 理解玩家意图
             logger.info(f"关键词解析方向失败，启用 AI 解析：input={req.player_input!r}")
             try:
-                parse_messages = build_direction_parse_prompt(req.player_input, options)
+                # 传入旁白选项文字（如有），让 AI 能语义匹配（"我想离开"→"迅速离开此地"→方向）
+                parse_messages = build_direction_parse_prompt(
+                    req.player_input, options,
+                    nav_option_hints=req.nav_option_hints or []
+                )
                 ai_direction = ai_client.call(parse_messages).strip().lower()
                 if ai_direction in {"right", "down", "diagonal"}:
                     direction = ai_direction
@@ -282,14 +288,16 @@ async def navigate(req: NavigateRequest):
                 logger.error(f"AI 解析方向失败：{e}")
 
     if direction is None:
-        # AI 也无法解析，返回提示（不中断游戏）
-        direction_names = {"right": "右", "down": "下", "diagonal": "右下斜"}
-        available = [direction_names.get(opt["direction"], opt["direction"]) for opt in options]
-        return {
-            "phase": "navigation",
-            "narrative": f"（没能理解你的意图，可选方向有：{'、'.join(available)}，请重新描述）",
-            "stats": state["stats"],
-        }
+        # AI 也无法解析，随机选第一个可用方向（游戏设计上不允许停在原地）
+        if options:
+            direction = random.choice(options)["direction"]
+            logger.info(f"方向解析全部失败，随机选择：{direction}")
+        else:
+            return {
+                "phase": "navigation",
+                "narrative": "（此处四面封闭，无路可走。）",
+                "stats": state["stats"],
+            }
 
     # 引擎移动玩家
     move_result = engine.move_player(state, direction)

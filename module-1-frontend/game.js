@@ -79,6 +79,13 @@ let currentPhase = 'navigation';
  */
 let currentNavDirections = [];
 
+/**
+ * 当前旁白中提取的选项文字，与 currentNavDirections 对应。
+ * 格式：[{direction: "right", text: "慢慢靠近井口查看"}, ...]
+ * 用于用户输入自由文字时，帮助后端理解语义（"我想离开" → 匹配 "迅速离开此地" → right）
+ */
+let currentNavOptionTexts = [];
+
 /** 是否正在等待 AI 响应，期间禁止发送 */
 let isLoading = false;
 
@@ -446,7 +453,13 @@ async function sendInput(text, hintDirection = null) {
  */
 async function handleNavigate(playerInput, hintDirection = null) {
   const body = { session_token: sessionToken, player_input: playerInput };
-  if (hintDirection) body.hint_direction = hintDirection;
+  if (hintDirection) {
+    // 按钮点击：直接发方向，跳过文字解析
+    body.hint_direction = hintDirection;
+  } else if (currentNavOptionTexts.length > 0) {
+    // 自由输入：发选项文字，让后端语义匹配（"我想离开" → "迅速离开此地" → 方向）
+    body.nav_option_hints = currentNavOptionTexts;
+  }
   const data = await apiPost('/api/navigate', body);
 
   // 渲染导航旁白（包含方向解析失败的提示）
@@ -740,12 +753,16 @@ function renderNavNarrative(content) {
     const firstOptionIndex = content.search(/[A-Ca-c][\.：:）)]/);
     const mainText = content.slice(0, firstOptionIndex).trim();
     if (mainText) renderMessage('narrative', mainText);
-    // 将 currentNavDirections[i] 绑定到对应按钮，点击时直接发方向
-    _appendNavOptionButtons(optionMatches.map((m, i) => ({
+    const parsed = optionMatches.map((m, i) => ({
       label:     m[0][0].toUpperCase(),
       text:      m[1].trim(),
       direction: currentNavDirections[i]?.direction || null,
-    })));
+    }));
+    // 保存选项文字，供用户自由输入时语义匹配方向
+    currentNavOptionTexts = parsed
+      .filter(o => o.direction)
+      .map(o => ({ direction: o.direction, text: o.text }));
+    _appendNavOptionButtons(parsed);
     return;
   }
 
@@ -758,11 +775,15 @@ function renderNavNarrative(content) {
     const mainText = content.slice(0, firstBoldIndex).trim();
     if (mainText) renderMessage('narrative', mainText);
     const labels = ['A', 'B', 'C', 'D'];
-    _appendNavOptionButtons(boldMatches.map((m, i) => ({
+    const parsed2 = boldMatches.map((m, i) => ({
       label:     labels[i] || String(i + 1),
       text:      m[1].trim(),
       direction: currentNavDirections[i]?.direction || null,
-    })));
+    }));
+    currentNavOptionTexts = parsed2
+      .filter(o => o.direction)
+      .map(o => ({ direction: o.direction, text: o.text }));
+    _appendNavOptionButtons(parsed2);
     return;
   }
 

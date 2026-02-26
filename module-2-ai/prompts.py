@@ -328,25 +328,41 @@ def build_card_prompt(
 # 方向意图解析 Prompt（关键词匹配失败时的 AI 兜底）
 # ──────────────────────────────────────────────
 
-def build_direction_parse_prompt(player_input: str, options: list[dict]) -> list[dict]:
+def build_direction_parse_prompt(
+    player_input: str,
+    options: list[dict],
+    nav_option_hints: list[dict] = None,
+) -> list[dict]:
     """
     构建方向意图解析 Prompt，让 AI 理解玩家输入对应哪个方向。
 
-    当关键词匹配失败时调用（例如玩家输入"往有动静的地方走"、"朝哭声的方向"等）。
-    AI 只需返回一个单词：right / down / diagonal / unknown，不得有任何其他文字。
+    当关键词匹配失败时调用（玩家输入自然语言，如"我要回家"、"去找那个人"等）。
+    AI 根据语义推断玩家最可能想去哪个场景，只返回方向标识。
+
+    注意：游戏中没有"左右上下"等方向词，所有选项都是故事场景，
+    玩家可能用情绪化语言或与选项语义相近但措辞不同的表达。
+    有疑问时倾向于选最合理的选项，只有完全无法匹配才返回 unknown。
 
     参数：
-        player_input — 玩家的自然语言输入
-        options      — 当前可选方向列表，每项含 direction、card_title、card_type
+        player_input      — 玩家的自然语言输入
+        options           — 当前可选方向列表，每项含 direction、card_title、card_type
+        nav_option_hints  — 旁白渲染的选项文字 [{direction, text}]，
+                            有了这个 AI 能语义匹配（"我想离开"→"迅速离开此地"→方向）
 
     返回：
         OpenAI messages 格式
     """
-    # 格式化可选选项（用事件标题对应方向，不显示方向词给 AI 解读）
+    # 构建选项描述（显示旁白选项文字 + 事件标题）
+    hint_map = {h["direction"]: h["text"] for h in (nav_option_hints or [])}
     options_lines = []
     for o in options:
+        direction = o.get("direction", "")
         title = o.get("card_title", "未知")
-        options_lines.append(f"- [{o['direction']}] 对应事件：「{title}」")
+        hint_text = hint_map.get(direction, "")
+        if hint_text:
+            options_lines.append(f"- [{direction}] 选项：「{hint_text}」")
+        else:
+            options_lines.append(f"- [{direction}] 场景：「{title}」")
 
     options_text = "\n".join(options_lines) if options_lines else "- （无可选方向）"
 
@@ -354,17 +370,25 @@ def build_direction_parse_prompt(player_input: str, options: list[dict]) -> list
         {
             "role": "system",
             "content": (
-                "你是一个游戏意图解析器，根据玩家描述的行动，判断玩家想去哪个事件。\n"
+                "你是一个游戏意图解析器。玩家用自然语言描述自己想做什么，"
+                "你需要判断他最可能想去哪个场景。\n"
+                "游戏里没有方向词（不存在左/右/上/下），只有故事场景可以前往。\n"
+                "玩家可能用情绪、口语或与选项语义相近的表达，你要理解语义再匹配。\n"
+                "特殊情况处理：\n"
+                "- 玩家表示"随便"、"都行"、"无所谓"、"随意"时，选第一个场景\n"
+                "- 玩家表示想"离开"、"走"、"回避"时，选逃离感最强的场景\n"
+                "- 玩家表示想"靠近"、"查看"、"调查"某个事物时，选最相关的场景\n"
                 "只能输出以下之一，不得有任何其他文字：\n"
-                "right / down / diagonal / unknown"
+                "right / down / diagonal\n"
+                "（必须选一个，游戏不允许停在原地）"
             ),
         },
         {
             "role": "user",
             "content": (
-                f"当前场景可选事件：\n{options_text}\n\n"
-                f"玩家输入：{player_input!r}\n\n"
-                "判断玩家最可能想去哪个事件，输出对应的方向标识（right/down/diagonal/unknown）："
+                f"当前可前往的场景：\n{options_text}\n\n"
+                f"玩家说：{player_input!r}\n\n"
+                "玩家最可能想去哪个场景？必须输出一个对应标识（right/down/diagonal）："
             ),
         },
     ]
