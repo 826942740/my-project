@@ -413,6 +413,7 @@ async def card_action(req: CardActionRequest):
             "npc_response": "（AI 响应异常，请重试）",
             "judge": "continue",
             "judge_reason": "JSON 解析失败，降级处理",
+            "options": [],
         }
 
     # 引擎处理本轮（更新对话历史、数值结算、判断卡片结束）
@@ -423,8 +424,9 @@ async def card_action(req: CardActionRequest):
     effects_log = card_result["effects_log"]
     game_over = card_result["game_over"]
 
-    # 如果主线完成，检查是否需要推进章节
-    if card_done and card.get("type") == "main_story":
+    # 如果主线完成且游戏未结束，推进到下一章节
+    # 注意：先检查 game_over，避免死亡时仍推进章节
+    if card_done and not game_over and card.get("type") == "main_story":
         new_state = engine.advance_chapter(new_state)
         logger.info(f"主线完成，章节推进至：{new_state.get('chapter_idx')}")
 

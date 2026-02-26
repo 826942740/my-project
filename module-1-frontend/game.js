@@ -520,7 +520,7 @@ async function handleCardAction(playerInput) {
   }
 
   // 显示 AI 给出的下一步行动选项（judge=continue 时，帮助玩家知道可以怎么做）
-  if (!data.card_done && data.options && data.options.length >= 2) {
+  if (!data.card_done && data.options && data.options.length >= 1) {
     _appendNavOptionButtons(data.options.map((text, i) => ({
       label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
       text,
