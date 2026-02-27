@@ -600,11 +600,16 @@ async def get_card_entry_narrative(token: str = Query(..., description="会话�
     # 读取玩家上次的导航选择文字（由 navigate 存入 state）
     player_choice = state.get("last_nav_input", "")
 
+    # 读取上一张卡片的上下文（由 card_runner 在卡片结束时写入 state）
+    # 用于让入场叙事 AI 了解前一段遭遇，保证故事逻辑连贯
+    last_card_context = state.get("last_card_context")
+
     messages = build_card_entry_prompt(
         meta=get_meta(story_id),
         card=card,
         stats=state["stats"],
         player_choice_text=player_choice,
+        last_card_context=last_card_context,
     )
     narrative = ai_client.call(messages)
     logger.info(f"卡片入场叙事生成：token={token[:8]}..., 卡片={state['in_card']}")

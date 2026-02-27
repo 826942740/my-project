@@ -122,6 +122,16 @@ def process_card_turn(state: dict, card: dict, player_input: str, ai_response: d
         # 检查是否死亡
         game_over = is_dead(new_state["stats"])
 
+        # 在清空 card_history 之前，保存本张卡片的上下文
+        # 供下一张卡片入场叙事 AI 使用，保证前后故事逻辑连贯
+        history_snapshot = list(new_state["card_history"])
+        new_state["last_card_context"] = {
+            "card_id":    card["id"],
+            "card_title": card.get("title", ""),
+            "outcome":    judge,                  # "win" 或 "lose"
+            "history":    history_snapshot[-6:],  # 最后3轮（6条），避免 prompt 过长
+        }
+
         # 清空卡片状态（退出卡片副本）
         new_state["in_card"] = None
         new_state["card_round"] = 0

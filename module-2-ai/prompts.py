@@ -155,7 +155,7 @@ def build_nav_prompt(
     # ── 组装系统提示（System Prompt）──
     system_content = (
         f"你是《{story_title}》世界的旁白者。{ai_system_prompt}\n"
-        f"语言：{language}，输出不超过80字。"
+        f"语言：{language}"
     )
 
     # ── 组装用户提示（User Prompt）──
@@ -271,6 +271,7 @@ def build_card_prompt(
         f"\n"
         f"[规则]\n"
         f"- 以角色身份回应玩家，符合角色性格\n"
+        f"- npc_response 必须包含具体的感官细节（声音、温度、气味、触感、视觉变化），通过身体动作和环境反应体现角色性格，保持故事的氛围与张力；禁止只做抽象概括，禁止用'它显得困惑''气氛变得紧张'这类直白描述代替具象细节\n"
         f"- 若玩家连续2轮或以上没有做出有意义的行动（沉默、无关输入、敷衍），应判定为失败\n"
         f"- 胜利（judge=win）需要至少经过2轮有效互动，不在第1轮就判定胜利\n"
         f"- 根据玩家当前状态自然调整角色态度（详见系统提示中的数值影响说明）\n"
@@ -282,7 +283,7 @@ def build_card_prompt(
         f"- 必须返回 JSON，格式如下（无多余文字，无代码块标记）：\n"
         f"\n"
         f'{{\n'
-        f'  "npc_response": "角色的回应文字（1-3句）",\n'
+        f'  "npc_response": "角色的回应文字（3-5句，必须包含感官细节和氛围渲染，通过身体动作、声音、环境变化体现角色性格）",\n'
         f'  "judge": "continue 或 win 或 lose",\n'
         f'  "judge_reason": "一句话说明判断理由（内部调试用，不显示给玩家）",\n'
         f'  "options": ["行动选项1（5-8字）", "行动选项2", "行动选项3"]\n'
@@ -293,15 +294,19 @@ def build_card_prompt(
     messages = [{"role": "system", "content": system_content}]
 
     # ── Few-shot 示例：展示正确的 JSON 输出格式 ──
-    # 帮助模型记住"必须返回 JSON"，避免只输出旁白文字
+    # 帮助模型记住"必须返回 JSON"，同时锚定有感官细节、有氛围层次的写作风格
     messages.append({"role": "user", "content": "（示例输入）我大声呵斥它离开"})
     messages.append({
         "role": "assistant",
         "content": (
-            '{"npc_response": "它愣了一下，慢慢向后退了一步，眼神中带着困惑。",'
+            '{"npc_response": "空气骤然凝固，那团黑烟被你的声音激怒，边缘开始剧烈颤抖，'
+            '发出低沉的嗡鸣，像是有什么东西在皮肤下拼命挣扎。'
+            '温度骤然下降，你呼出的气在空气中凝成白雾，鼻腔里涌入一股焦糊的腐败气息。'
+            '它没有后退，反而向你倾斜，两个空洞的眼窝中涌出更浓的黑烟，'
+            '声音从四面八方同时传来，带着碎裂的回响——\'再说一次。\'",'
             ' "judge": "continue",'
-            ' "judge_reason": "玩家开始对抗但尚未达成胜利条件",'
-            ' "options": ["继续保持气势逼近", "轻声安抚，转换策略", "退后一步观察反应"]}'
+            ' "judge_reason": "玩家展示了对抗意志，但尚未满足胜利条件",'
+            ' "options": ["保持气势，再次呵斥", "退后一步，压制恐惧", "转移话题，观察它的反应"]}'
         ),
     })
 
@@ -333,19 +338,22 @@ def build_card_entry_prompt(
     card: dict,
     stats: dict,
     player_choice_text: str,
+    last_card_context: dict = None,
 ) -> list[dict]:
     """
     构建卡片入场叙事 Prompt。
 
     玩家选择了某个方向进入卡片后，AI 基于玩家的行动和遭遇内容，
     生成一段自然衔接的入场描述，将导航情景过渡到卡片遭遇。
-    避免直接使用 JSON 里的静态 scene_description（可能与导航旁白设定冲突）。
+    如果有上一张卡片的上下文，同时结合其结局和对话内容，确保故事逻辑连贯。
 
     参数：
         meta               — 故事包 meta.json 内容
         card               — 当前卡片完整配置
         stats              — 玩家当前状态
         player_choice_text — 玩家刚才选择的行动文字（如"靠近橙色灯光处"）
+        last_card_context  — 上一张卡片的上下文（可选），格式：
+                             {"card_title": str, "outcome": "win"/"lose", "history": [...]}
 
     返回：
         OpenAI messages 格式
@@ -359,18 +367,37 @@ def build_card_entry_prompt(
 
     system_content = (
         f"你是《{story_title}》世界的旁白者。{ai_system_prompt}\n"
-        f"语言：{language}，输出2-3句（约40-60字）。"
+        f"语言：{language}"
     )
 
+    # ── 构建上一张卡片的上下文段落（可选）──
+    # 有上文时，引导 AI 从上一段遭遇的结局自然过渡到新场景
+    prev_section = ""
+    if last_card_context:
+        prev_title   = last_card_context.get("card_title", "上一段遭遇")
+        prev_outcome = "胜利" if last_card_context.get("outcome") == "win" else "失败"
+        prev_history = last_card_context.get("history", [])
+        history_lines = "\n".join(
+            f"{'玩家' if m['role'] == 'player' else '对方'}：{m['content']}"
+            for m in prev_history
+        )
+        prev_section = (
+            f"[刚刚结束的遭遇]\n"
+            f"遭遇名称：{prev_title}，结果：{prev_outcome}\n"
+            f"最后几轮对话：\n{history_lines}\n\n"
+        )
+
     user_content = (
-        f"[任务]\n"
-        f"玩家做出了行动：「{player_choice_text}」\n"
-        f"紧接着，他进入了以下遭遇（仅供参考，用自己的语言重新描述，不要照搬）：\n"
-        f"{scene_ref}\n"
-        f"\n"
+        f"{prev_section}"
+        f"[玩家的行动]\n"
+        f"「{player_choice_text}」\n\n"
+        f"[即将遭遇的场景（仅供参考，不要照搬文字）]\n"
+        f"{scene_ref}\n\n"
         f"[规则]\n"
-        f"- 写2-3句入场叙述，从玩家的行动自然过渡到遭遇场景\n"
-        f"- 不照搬场景参考的文字，要与玩家刚才的行动衔接\n"
+        f"- 写入场叙述，从玩家刚才的经历和行动自然过渡到当前遭遇场景\n"
+        f"- 如果有刚结束的遭遇，必须让前后故事逻辑连贯（不能让刚发生的事凭空消失）\n"
+        f"- 对环境、气味、温度等感知细节进行生动描写，体现故事氛围\n"
+        f"- 不照搬场景参考的文字，用自己的语言重新呈现\n"
         f"- 只写纯叙事，不写行动选项，不用问句结尾\n"
         f"- 不提任何数值（护符值、功德、现金等）"
     )
