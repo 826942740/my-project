@@ -83,7 +83,7 @@ fangame/
 ├── module-2-ai/
 │   ├── CLAUDE.md
 │   ├── client.py           # OpenAI 兼容 API 客户端
-│   └── prompts.py          # 三种 Prompt 模板（导航/NPC/裁判）
+│   └── prompts.py          # 四种 Prompt 模板（导航旁白/卡片NPC+裁判/入场叙事/方向解析）
 │
 ├── module-3-game-rules/
 │   ├── CLAUDE.md
@@ -92,7 +92,8 @@ fangame/
 │   ├── navigator.py        # 导航上下文：可选方向、卡片标题提取
 │   ├── stats.py            # 统一数值系统：apply_effects、死亡判定
 │   └── stories/            # 剧情配置文件（内容与引擎完全分离）
-│       └── dark_forest/    # 示例故事包
+│       ├── dark_forest/    # 示例故事包
+│       └── khemjira/       # 主故事包（当前运行）
 │           ├── meta.json
 │           ├── chapters.json
 │           ├── chapters/

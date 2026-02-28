@@ -145,9 +145,9 @@ def generate_nav_narrative(state: dict) -> str:
     messages = build_nav_prompt(
         meta=get_meta(state["story_id"]),
         chapter_name=chapter.get("name", "未知章节"),
-        position=tuple(state["position"]),
         stats=state["stats"],
         directions=nav_ctx["options"],
+        last_card_context=state.get("last_card_context"),
     )
     return ai_client.call(messages)
 
@@ -187,11 +187,25 @@ async def new_session(req: NewGameRequest):
     token, short_code = save_system.create_session(story_id, initial_state)
     logger.info(f"新会话已创建：token={token[:8]}...，short_code={short_code}")
 
+    # 获取开场剧情文本和卡片信息（故事包可选配置）
+    prologue = engine.story.get("prologue", "")
+    prologue_card_id = initial_state.get("in_card")
+    prologue_card_info = {}
+    if prologue_card_id:
+        card = engine.cards_pool.get(prologue_card_id)
+        if card:
+            prologue_card_info = {
+                "title": card.get("title", ""),
+                "initial_actions": card.get("initial_actions", []),
+            }
+
     return {
         "session_token": token,
         "short_code": short_code,
         "story_id": story_id,
         "state": initial_state,
+        "prologue": prologue,
+        "prologue_card": prologue_card_info,
     }
 
 

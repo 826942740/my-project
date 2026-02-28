@@ -93,9 +93,9 @@ def format_stats_summary(stats: dict) -> str:
 def build_nav_prompt(
     meta: dict,
     chapter_name: str,
-    position: tuple,
     stats: dict,
     directions: list[dict],
+    last_card_context: dict = None,
 ) -> list[dict]:
     """
     构建导航旁白 Prompt，返回 OpenAI messages 格式。
@@ -149,37 +149,51 @@ def build_nav_prompt(
     # ── 格式化 stats 摘要 ──
     stats_summary = format_stats_summary(stats)
 
-    # ── 格式化坐标 ──
-    row, col = position if len(position) >= 2 else (0, 0)
-
     # ── 组装系统提示（System Prompt）──
     system_content = (
         f"你是《{story_title}》世界的旁白者。{ai_system_prompt}\n"
         f"语言：{language}"
     )
 
+    # ── 构建上一张卡片上下文段落（可选）──
+    # 有上文时，引导 AI 从上一段遭遇的情绪余韵自然过渡，避免场景硬切
+    prev_section = ""
+    if last_card_context:
+        prev_title   = last_card_context.get("card_title", "上一段遭遇")
+        prev_outcome = "胜利" if last_card_context.get("outcome") == "win" else "失败"
+        prev_section = (
+            f"[刚刚结束的遭遇]\n"
+            f"遭遇名称：{prev_title}，结果：{prev_outcome}\n\n"
+        )
+
     # ── 组装用户提示（User Prompt）──
     user_content = (
-        f"[规则]\n"
-        f"- 将下方列出的几件事自然地融合进一段场景描述，让玩家感受到不止一个选择\n"
-        f"- 不提方向词（不说右/左/上/下/斜），不说出卡片类型\n"
-        f"- 用感官细节（声音、气味、光影、温度、震动）暗示每件事的存在\n"
-        f"- 不得在旁白文字中出现任何数值、数字或状态词（如护符、现金、功德等）\n"
-        f"- 场景描述后，必须严格按照以下格式列出 {len(directions)} 个选项（禁止使用加粗**、斜杠/、序号1.2.等其他任何格式）：\n"
-        f"  A. 行动文字\n"
-        f"  B. 行动文字\n"
-        f"  C. 行动文字（如有第三项）\n"
-        f"- 选项文字要简洁（5-10字），描述玩家的行动而非方向\n"
-        f"\n"
+        f"{prev_section}"
         f"[上下文]\n"
-        f"玩家当前位置：{chapter_name}，坐标 ({row}, {col})\n"
+        f"当前位置：{chapter_name}\n"
         f"玩家状态：{stats_summary}\n"
         f"\n"
-        f"当前场景可以关注的事：\n"
+        f"当前场景中可以感知到的事：\n"
         f"{directions_text}\n"
         f"\n"
-        f"[任务]\n"
-        f"生成场景描述 + 行动选项（总字数不超过120字）。"
+        f"[写作规则]\n"
+        f"- 不提方向词（不说右/左/上/下/斜），不说出卡片类型\n"
+        f"- 不得出现任何数值、数字或状态词（护符、现金、功德等）\n"
+        f"- 主角是Khem，第二人称「你」指代她，叙事中可自然提及她的身份细节\n"
+        f"- 将场景中可感知的几件事融入描写，用感官细节（气味、声音、光影、温度、触感）暗示它们的存在，不直接点名\n"
+        f"- 用Khem的身体反应表达情绪（后颈发凉、胃在下沉、手心出汗），不用「她感到恐惧」这类直白描述\n"
+        f"\n"
+        f"[格式要求]\n"
+        f"场景描述部分：200-300字，分3段，严格按以下结构展开：\n"
+        f"  第1段：时间过渡——用2-3句带过上次遭遇后Khem这几天的普通生活细节（上课、打工、吃路边摊、在宿舍发呆等曼谷学生日常），让读者感受时间在流逝；如果有[刚刚结束的遭遇]，第一句必须从那段经历的情绪余韵起笔，再过渡到日常\n"
+        f"  第2段：环境铺陈——用多种感官描写Khem当前所在位置的具体氛围（街道名称、气温、声音层次、气味混合），写出曼谷的质感\n"
+        f"  第3段：悬念引入——将场景中可感知的几件事自然呈现，以Khem某个细微的身体反应收尾，留悬念，不做解释\n"
+        f"\n"
+        f"场景描述结束后另起一行，严格按以下格式列出 {len(directions)} 个选项"
+        f"（禁止加粗**、斜杠/、序号1.2.等格式）：\n"
+        f"  A. 行动文字（5-10字，描述Khem的行动）\n"
+        f"  B. 行动文字\n"
+        f"  C. 行动文字（如有第三项）\n"
     )
 
     # ── 返回 OpenAI messages 格式 ──

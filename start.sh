@@ -13,9 +13,17 @@ PORT=${PORT:-8768}
 ROOT_DIR="$(dirname "$0")"
 cd "$ROOT_DIR" || exit 1
 
-# 激活虚拟环境（如果存在）
+# 激活虚拟环境（优先使用本项目 venv，回退到 fangame001 的 venv）
 if [ -f "venv/bin/activate" ]; then
     source venv/bin/activate
+    PYTHON=python
+elif [ -f "venv/Scripts/activate" ]; then
+    source venv/Scripts/activate
+    PYTHON=python
+elif [ -f "/d/test/fangame001/venv/Scripts/python.exe" ]; then
+    PYTHON=/d/test/fangame001/venv/Scripts/python.exe
+else
+    PYTHON=python
 fi
 
 # 进入 backend 目录
@@ -29,4 +37,4 @@ echo "  局域网/外网：http://<服务器IP>:$PORT"
 echo "=============================="
 
 # 启动服务（--host 0.0.0.0 允许外部访问）
-uvicorn main:app --host 0.0.0.0 --port "$PORT"
+"$PYTHON" -m uvicorn main:app --host 0.0.0.0 --port "$PORT"

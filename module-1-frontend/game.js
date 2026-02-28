@@ -331,10 +331,30 @@ async function startNewGame() {
     // 立刻显示游戏界面和侧边栏
     showGameScreen();
     if (data.state) updateSidebar(data.state);
-    enterNavPhase();
 
-    // 异步拉取导航旁白（AI 生成，不阻塞界面显示）
-    fetchNavNarrative();
+    // 判断是否有开场卡片（prologue 作为第一张卡片）
+    if (data.prologue && data.state && data.state.in_card) {
+      // 开场卡片模式：显示 prologue 文本 → 进入卡片阶段 → 等玩家交互
+      renderMessage('narrative', data.prologue);
+      const cardTitle = (data.prologue_card && data.prologue_card.title) || data.state.in_card;
+      enterCardPhase(cardTitle, null);
+      // 显示初始行动选项按钮
+      const actions = (data.prologue_card && data.prologue_card.initial_actions) || [];
+      if (actions.length >= 2) {
+        _appendNavOptionButtons(actions.map((text, i) => ({
+          label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+          text,
+        })));
+      }
+      // 不调用 fetchNavNarrative()，等卡片结束后再进导航阶段
+    } else {
+      // 无开场卡片：正常导航流程
+      enterNavPhase();
+      if (data.prologue) {
+        renderMessage('narrative', data.prologue);
+      }
+      fetchNavNarrative();
+    }
 
   } catch (err) {
     renderMessage('warning', `创建游戏失败：${err.message}`);

@@ -105,6 +105,23 @@ class GameEngine:
                 for card in card_list:
                     self.cards_pool[card["id"]] = card
 
+        # ── 读取开场剧情（可选，文件不存在则跳过）────────────────────
+        prologue_path = story_dir / "prologue.json"
+        if prologue_path.exists():
+            with open(prologue_path, encoding="utf-8") as f:
+                prologue_data = json.load(f)
+            self.story["prologue"] = prologue_data.get("text", "")
+            # 如果配置了开场卡片，加入 cards_pool
+            prologue_card = prologue_data.get("card")
+            if prologue_card and "id" in prologue_card:
+                self.cards_pool[prologue_card["id"]] = prologue_card
+                self.story["prologue_card_id"] = prologue_card["id"]
+            else:
+                self.story["prologue_card_id"] = None
+        else:
+            self.story["prologue"] = ""
+            self.story["prologue_card_id"] = None
+
         # ── 读取所有主线故事（main_stories/ 目录下所有 json 文件）────────
         self.story["main_stories"] = {}
         main_stories_dir = story_dir / "main_stories"
@@ -159,7 +176,7 @@ class GameEngine:
             "story_id":        story_id,
             "chapter_idx":     0,                    # 当前章节索引
             "position":        [1, 1],               # 从左上角 (1,1) 出发
-            "in_card":         None,                 # 当前所在卡片 ID（None 表示在导航阶段）
+            "in_card":         self.story.get("prologue_card_id"),  # 有开场卡片则直接进入，否则 None
             "card_round":      0,                    # 当前卡片已进行的轮数
             "card_history":    [],                   # 当前卡片的对话历史
             "stats":           initial_stats,        # 玩家数值（HP、金币等）
