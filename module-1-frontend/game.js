@@ -299,8 +299,12 @@ function applyRestoredState(state, skipCardHistory = false) {
     });
   }
 
-  // 根据 in_card 判断当前阶段
-  if (state.in_card) {
+  // 根据状态判断当前阶段
+  if (state.daily_life_phase) {
+    // 恢复到日常生活阶段（显示提示让玩家继续）
+    enterDailyLifePhase();
+    renderMessage('system', '（日常生活中，请选择或输入你想做的事）');
+  } else if (state.in_card) {
     enterCardPhase(state.in_card, null); // 恢复时不重新显示进入提示
   } else {
     enterNavPhase();
@@ -404,6 +408,8 @@ async function sendInput(text, hintDirection = null) {
   try {
     if (currentPhase === 'navigation') {
       await handleNavigate(text, hintDirection);
+    } else if (currentPhase === 'daily_life') {
+      await handleDailyLifeAction(text);
     } else {
       await handleCardAction(text);
     }
@@ -521,10 +527,23 @@ async function handleCardAction(playerInput) {
     renderMessage('warning', '失败！');
   }
 
-  // 卡片结束：切回导航阶段
+  // 卡片结束：判断是否进入日常生活阶段，或切回导航阶段
   if (data.card_done) {
     exitCardPhase();
-    if (data.game_over) {
+
+    if (data.daily_life) {
+      // 进入日常生活阶段（事件卡结束后的互动式日常过渡）
+      enterDailyLifePhase();
+      renderMessage('narrative', data.daily_life.narrative);
+      // 显示日常行动选项按钮
+      const actions = data.daily_life.options || [];
+      if (actions.length >= 1) {
+        _appendNavOptionButtons(actions.map((text, i) => ({
+          label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+          text,
+        })));
+      }
+    } else if (data.game_over) {
       // 游戏结束（HP归零等），不再拉取旁白
       renderMessage('warning', '游戏结束。');
     } else if (data.game_cleared) {
@@ -533,6 +552,42 @@ async function handleCardAction(playerInput) {
     } else {
       // 正常卡片结束，异步拉取下一步导航旁白
       fetchNavNarrative();
+    }
+  }
+}
+
+/**
+ * 日常生活阶段：调用 POST /api/daily_life
+ * @param {string} playerInput - 玩家选择的行动或自由输入
+ */
+async function handleDailyLifeAction(playerInput) {
+  const data = await apiPost('/api/daily_life', {
+    session_token: sessionToken,
+    player_input:  playerInput,
+  });
+
+  // 渲染日常叙事
+  if (data.narrative) {
+    renderMessage('narrative', data.narrative);
+  }
+
+  // 更新 stats（如果有变化）
+  if (data.stats) {
+    updateSidebarStats(data.stats);
+  }
+
+  // 日常阶段结束 → 回到导航
+  if (data.done) {
+    enterNavPhase();
+    fetchNavNarrative();
+  } else {
+    // 显示下一轮行动选项
+    const actions = data.options || [];
+    if (actions.length >= 1) {
+      _appendNavOptionButtons(actions.map((text, i) => ({
+        label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+        text,
+      })));
     }
   }
 }
@@ -566,6 +621,16 @@ function enterCardPhase(cardTitle, maxRound) {
     elSidebarCardRound.textContent = maxRound ? `第 1 / ${maxRound} 轮` : '第 1 轮';
     elSidebarCard.classList.remove('hidden');
   }
+}
+
+/**
+ * 切换到日常生活阶段：事件卡结束后的互动式日常过渡
+ */
+function enterDailyLifePhase() {
+  currentPhase = 'daily_life';
+  elPhaseLabel.textContent = '日常';
+  elPlayerInput.placeholder = '选择或输入你想做的事…';
+  elSidebarCard.classList.add('hidden');
 }
 
 /**

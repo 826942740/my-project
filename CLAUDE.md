@@ -30,14 +30,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 整体游戏结构
 
-游戏由多个**章节**组成，每个章节是一张独立的网格地图：
+游戏由多个**章节**组成，每个章节是一张独立的网格地图。事件卡结束后自动进入日常生活阶段：
 
 ```
-[第1章地图] → 走到最下行或最右列 → 触发本章主线剧情
-     ↓ 完成主线
-[第2章地图] → 走到最下行或最右列 → 触发本章主线剧情
-     ↓ 完成主线
-[第N章地图] → ... → 结局
+[第1章地图] → 移动 → 事件卡 → 日常生活(3-5轮) → 移动 → 事件卡 → ...
+     ↓ 走到边界
+  触发本章主线剧情 → 完成 → [第2章地图] → ... → 结局
 ```
 
 ### 地图与移动
@@ -57,6 +55,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `npc` | 友好或中立角色，可交易/获情报 |
 | `treasure` | 宝箱/机关，解谜或承担陷阱 |
 | `main_story` | 本章主线剧情（边界触发，非随机） |
+| `prologue` | 开场剧情卡片（新游戏开始时自动进入，完成后进导航） |
+
+### 日常生活阶段
+
+事件卡（monster/npc/treasure）结束后，自动进入日常生活阶段（3-5 轮），完成后回到导航：
+
+- **AI 驱动**：不使用卡片，由 AI 根据章节提示词 + 上下文直接生成叙事
+- **交互式**：每轮 AI 生成一段叙事 + 3 个选项，玩家选择或自由输入
+- **上下文连贯**：第一轮从刚结束的事件余韵起笔，最后一轮以不安预兆收尾
+- **章节差异**：每章有独立的 `daily_life_prompt`，场景/人物/情绪随章节变化
+- **GameState 字段**：`daily_life_phase` / `daily_life_round` / `daily_life_total` / `daily_life_history`
 
 ### 数值系统（统一 Stats）
 
@@ -76,14 +85,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 fangame/
 ├── module-1-frontend/
 │   ├── CLAUDE.md
-│   ├── index.html          # 主页面（两种状态：导航中 / 卡片内）
+│   ├── index.html          # 主页面（三种状态：导航中 / 卡片内 / 日常生活）
 │   ├── style.css
 │   └── game.js             # 前端逻辑，与后端 API 通信
 │
 ├── module-2-ai/
 │   ├── CLAUDE.md
 │   ├── client.py           # OpenAI 兼容 API 客户端
-│   └── prompts.py          # 四种 Prompt 模板（导航旁白/卡片NPC+裁判/入场叙事/方向解析）
+│   └── prompts.py          # 五种 Prompt 模板（导航旁白/卡片NPC+裁判/入场叙事/方向解析/日常生活）
 │
 ├── module-3-game-rules/
 │   ├── CLAUDE.md
@@ -95,6 +104,7 @@ fangame/
 │       ├── dark_forest/    # 示例故事包
 │       └── khemjira/       # 主故事包（当前运行）
 │           ├── meta.json
+│           ├── prologue.json  # 开场剧情文本 + 开场卡片配置（可选）
 │           ├── chapters.json
 │           ├── chapters/
 │           ├── cards/
@@ -122,9 +132,11 @@ fangame/
       → 游戏引擎（module-3）：
           [导航阶段] 解析方向意图 → 移动玩家 → 检测边界触发主线
           [卡片阶段] 传入玩家输入 + AI返回 → 判断胜负 → 结算 stats
+          [日常阶段] 提供章节日常提示词 + 上下文
       → AI 模块（module-2）：
           导航阶段 → 生成方向叙事提示
           卡片阶段 → NPC回应 + 裁判判断（同一次调用）
+          日常阶段 → 生成日常叙事 + 3选项（JSON格式）
       → 存档系统（module-4）：保存新 GameState
     → 返回 JSON 给前端（module-1）
       → 前端渲染文字 + 更新状态栏
@@ -171,16 +183,48 @@ Response: {
   "judge": "continue",                              // continue / win / lose
   "card_done": false,
   "effects_log": [],
+  "stats": { "hp": 80, "gold": 30, ... },
+  "daily_life": null                                 // card_done=true 时自动填充第一轮日常
+}
+```
+
+### 日常生活阶段（事件卡结束后自动进入）
+
+```
+POST /api/daily_life
+Body: {
+  "session_token": "xxx",
+  "player_input": "去饭馆吃饭"          // 选项文字或自由输入
+}
+
+Response: {
+  "phase": "daily_life",
+  "narrative": "你走进小饭馆...",         // AI 生成的日常叙事
+  "options": ["选项1", "选项2", "选项3"], // 3个选项，最后一轮为空
+  "round": 2,                             // 当前轮次
+  "total": 4,                             // 总轮次
+  "done": false,                          // true = 日常结束，回导航
   "stats": { "hp": 80, "gold": 30, ... }
 }
 ```
 
-### 其他接口
+注：第一轮日常由 `/api/card_action` 在事件卡结束时自动生成并返回（`daily_life` 字段）。
+
+### 辅助接口（前端自动调用）
 
 ```
-POST /api/session/new          → 创建新游戏，返回 session_token
+GET  /api/nav?token=xxx        → AI 生成导航旁白（当前位置的环境描述 + 可选方向）
+GET  /api/card_entry?token=xxx → AI 生成卡片入场叙事（进入卡片时的场景描写）
+```
+
+### 会话管理接口
+
+```
+POST /api/session/new          → 创建新游戏，返回 session_token + prologue + state
 GET  /api/state?token=xxx      → 获取当前完整状态
+GET  /api/session/code?token=xxx → 获取存档短码（用于跨设备恢复）
 POST /api/session/resume       → 通过存档码恢复游戏（换设备用）
+GET  /api/health               → 健康检查
 ```
 
 ---
@@ -190,15 +234,16 @@ POST /api/session/resume       → 通过存档码恢复游戏（换设备用）
 所有故事内容放在 `module-3-game-rules/stories/<故事名>/` 目录下：
 
 ```
-dark_forest/
-├── meta.json          # 故事名、AI风格、导航提示模板
+<故事名>/
+├── meta.json          # 故事名、AI system prompt、初始数值、导航提示模板
+├── prologue.json      # （可选）开场剧情文本 + 开场卡片配置
 ├── chapters.json      # 章节列表顺序
 ├── chapters/
-│   └── chapter_1.json # 地图尺寸、卡片池、主线ID
+│   └── chapter_1.json # 地图尺寸、卡片池、主线ID、daily_life_prompt
 ├── cards/
 │   ├── monsters.json  # 怪物卡片库
 │   ├── npcs.json      # NPC卡片库
-│   └── treasures.json # 宝箱卡片库
+│   └── treasures.json # 宝箱卡片库（可扩展其他类型如 discoveries.json）
 └── main_stories/
     ├── act_1.json     # 第1章主线
     └── ending.json    # 结局
@@ -214,15 +259,21 @@ dark_forest/
 # 安装依赖
 pip install -r requirements.txt
 
-# 启动后端（开发模式，支持热重载）
+# 启动后端（推荐，使用 start.sh 脚本，默认端口 8768）
+./start.sh                    # 自动激活 venv，监听 0.0.0.0:8768
+PORT=9000 ./start.sh          # 自定义端口
+
+# 或手动启动（开发模式，支持热重载）
 cd backend
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8768
 
 # 访问游戏
-# 直接打开 module-1-frontend/index.html
+# http://localhost:8768
 
 # 查看 API 文档（FastAPI 自动生成）
-# http://localhost:8000/docs
+# http://localhost:8768/docs
+
+# 注意：start.sh 不带 --reload，修改代码后需手动重启
 ```
 
 ---

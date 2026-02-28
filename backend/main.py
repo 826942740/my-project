@@ -40,7 +40,7 @@ FRONTEND_DIR = Path(__file__).parent.parent / "module-1-frontend"
 
 # ── 导入各模块（目录名中的 - 必须写成 _）──
 from module_2_ai.client import AIClient
-from module_2_ai.prompts import build_nav_prompt, build_card_prompt, build_direction_parse_prompt, build_card_entry_prompt
+from module_2_ai.prompts import build_nav_prompt, build_card_prompt, build_direction_parse_prompt, build_card_entry_prompt, build_daily_life_prompt
 from module_3_game_rules.engine import GameEngine
 from module_3_game_rules.card_runner import process_card_turn, load_card
 from module_3_game_rules.navigator import parse_direction
@@ -115,6 +115,12 @@ class CardActionRequest(BaseModel):
     player_input: str            # 玩家的对话输入
 
 
+class DailyLifeRequest(BaseModel):
+    """日常生活阶段的请求体"""
+    session_token: str           # 玩家会话令牌
+    player_input: str            # 玩家的选择或自由输入
+
+
 class ResumeRequest(BaseModel):
     """通过短码恢复存档的请求体"""
     code: str                    # 6 位存档短码（如 "A3X7KM"）
@@ -148,6 +154,7 @@ def generate_nav_narrative(state: dict) -> str:
         stats=state["stats"],
         directions=nav_ctx["options"],
         last_card_context=state.get("last_card_context"),
+        last_daily_life_context=state.get("last_daily_life_context"),
     )
     return ai_client.call(messages)
 
@@ -257,7 +264,12 @@ async def navigate(req: NavigateRequest):
         f"input={req.player_input!r}"
     )
 
-    # 验证当前阶段：必须是导航阶段（in_card 为 None）
+    # 验证当前阶段：必须是导航阶段（in_card 为 None 且不在日常生活阶段）
+    if state.get("daily_life_phase"):
+        raise HTTPException(
+            status_code=400,
+            detail="当前在日常生活阶段，请使用 /api/daily_life 进行互动"
+        )
     if state.get("in_card") is not None:
         raise HTTPException(
             status_code=400,
@@ -482,6 +494,55 @@ async def card_action(req: CardActionRequest):
             # 章节推进失败，记录日志但不中断（卡片已结算成功）
             logger.error(f"advance_chapter 异常：{e}", exc_info=True)
 
+    # ── 事件卡结束后启动日常生活阶段 ─────────────────────────────────────
+    # monster/npc/treasure 结束后 → 进入日常阶段（AI 生成叙事，玩家互动式探索）
+    daily_narrative = None
+    daily_options = None
+    if card_done and not game_over and not new_state.get("game_cleared"):
+        card_type = card.get("type", "")
+
+        if card_type in ("monster", "npc", "treasure", "prologue"):
+            # 启动日常生活阶段（清除上一轮残留的日常上下文）
+            new_state.pop("last_daily_life_context", None)
+            dl_config = new_state.get("daily_life_config", {})
+            total_rounds = random.randint(
+                dl_config.get("min_rounds", 3),
+                dl_config.get("max_rounds", 5),
+            )
+            new_state["daily_life_phase"] = True
+            new_state["daily_life_round"] = 0
+            new_state["daily_life_total"] = total_rounds
+            new_state["daily_life_history"] = []
+
+            # 生成第一轮日常叙事（结合刚结束的事件上下文）
+            try:
+                daily_prompt_text = engine.get_daily_life_prompt(new_state)
+                dl_messages = build_daily_life_prompt(
+                    meta=get_meta(story_id),
+                    chapter_daily_prompt=daily_prompt_text,
+                    stats=new_state["stats"],
+                    last_card_context=new_state.get("last_card_context"),
+                    daily_history=[],
+                    player_input=None,  # 第一轮无玩家输入
+                    current_round=1,
+                    total_rounds=total_rounds,
+                )
+                dl_resp_str = ai_client.call(dl_messages, expect_json=True)
+                dl_resp = json.loads(dl_resp_str)
+                daily_narrative = dl_resp.get("narrative", "")
+                daily_options = dl_resp.get("options", [])
+
+                # 记录第一轮到日常对话历史
+                new_state["daily_life_round"] = 1
+                new_state["daily_life_history"].append({
+                    "role": "narrator",
+                    "content": daily_narrative,
+                })
+            except Exception as e:
+                logger.error(f"日常叙事生成失败：{e}", exc_info=True)
+                # 生成失败则跳过日常阶段，直接回导航
+                new_state["daily_life_phase"] = False
+
     # 保存新状态
     save_system.save_game(req.session_token, new_state)
     logger.info(
@@ -502,11 +563,177 @@ async def card_action(req: CardActionRequest):
         "options": ai_response.get("options", []) if not card_done else [],
     }
 
-    # 卡片结束时，通知前端是否通关（前端会自行调用 /api/nav 获取导航旁白）
+    # 卡片结束时，通知前端是否通关
     if card_done and not game_over:
         response["game_cleared"] = bool(new_state.get("game_cleared"))
 
+    # 如果进入了日常生活阶段，附带第一轮叙事和选项
+    if daily_narrative:
+        response["daily_life"] = {
+            "narrative": daily_narrative,
+            "options": daily_options or [],
+            "round": 1,
+            "total": new_state["daily_life_total"],
+        }
+
     return response
+
+
+@app.post("/api/daily_life")
+async def daily_life_action(req: DailyLifeRequest):
+    """
+    日常生活阶段：玩家在事件卡之间的互动式日常探索。
+
+    流程：
+      1. 验证当前处于日常阶段（daily_life_phase=True）
+      2. 记录玩家输入到日常对话历史
+      3. 推进轮数，调用 AI 生成下一段日常叙事 + 3 个选项
+      4. 最后一轮：AI 以不安预兆收尾，日常阶段结束，回到导航
+
+    AI 返回格式（JSON）：
+      {
+        "narrative": "日常叙事文字",
+        "options": ["选项1", "选项2", "选项3"]   // 最后一轮为 []
+      }
+    """
+    # 加载状态
+    state = save_system.load_game(req.session_token)
+    if state is None:
+        raise HTTPException(status_code=404, detail="会话不存在，请开始新游戏")
+
+    # 验证当前处于日常生活阶段
+    if not state.get("daily_life_phase"):
+        raise HTTPException(
+            status_code=400,
+            detail="当前不在日常生活阶段"
+        )
+
+    # 确保故事包已加载
+    story_id = state.get("story_id", "khemjira")
+    if engine.story is None or engine.story["meta"].get("id") != story_id:
+        try:
+            engine.load_story(story_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"故事包不存在：{story_id}")
+
+    # 推进轮数
+    current_round = state.get("daily_life_round", 0) + 1
+    total_rounds = state.get("daily_life_total", 3)
+
+    logger.debug(
+        f"[daily_life] token={req.session_token[:8]}... | "
+        f"轮数={current_round}/{total_rounds} | input={req.player_input!r}"
+    )
+
+    # ── 用户回应最后一轮日常：不再生成新叙事，直接结束 ──
+    # 最后一轮 AI 已经生成了叙事 + 选项，用户选了之后 current_round > total_rounds
+    if current_round > total_rounds:
+        # 从对话历史中取最后一条叙事作为上下文
+        daily_history = state.get("daily_life_history", [])
+        last_narrative = ""
+        for entry in reversed(daily_history):
+            if entry.get("role") == "narrator":
+                last_narrative = entry.get("content", "")
+                break
+
+        # 保存日常结尾上下文，供导航 prompt 衔接
+        state["last_daily_life_context"] = {
+            "last_narrative": last_narrative,
+            "last_player_input": req.player_input,
+        }
+        # 清理日常状态，回到导航
+        state["daily_life_phase"] = False
+        state["daily_life_round"] = 0
+        state["daily_life_total"] = 0
+        state["daily_life_history"] = []
+
+        save_system.save_game(req.session_token, state)
+        logger.info(
+            f"日常生活结束：token={req.session_token[:8]}..., "
+            f"最后输入={req.player_input!r}"
+        )
+
+        return {
+            "phase": "daily_life",
+            "narrative": "",
+            "options": [],
+            "round": current_round,
+            "total": total_rounds,
+            "done": True,
+            "stats": state["stats"],
+        }
+
+    # ── 正常轮次：调用 AI 生成下一段叙事 ──
+    daily_history = state.get("daily_life_history", [])
+
+    # 构建日常叙事 Prompt
+    # player_input 单独传入，让 prompt 在上下文中强调玩家行动
+    # history 只包含之前轮次的完整记录，避免重复
+    daily_prompt_text = engine.get_daily_life_prompt(state)
+    dl_messages = build_daily_life_prompt(
+        meta=get_meta(story_id),
+        chapter_daily_prompt=daily_prompt_text,
+        stats=state["stats"],
+        last_card_context=state.get("last_card_context"),
+        daily_history=daily_history,
+        player_input=req.player_input,
+        current_round=current_round,
+        total_rounds=total_rounds,
+    )
+
+    # 调用 AI
+    try:
+        dl_resp_str = ai_client.call(dl_messages, expect_json=True)
+        dl_resp = json.loads(dl_resp_str)
+        narrative = dl_resp.get("narrative", "")
+        options = dl_resp.get("options", [])
+    except Exception as e:
+        logger.error(f"日常叙事 AI 调用失败：{e}", exc_info=True)
+        narrative = "（日常叙事生成失败，跳过本段日常。）"
+        options = []
+
+    # 记录玩家输入 + AI 叙事到对话历史
+    daily_history.append({
+        "role": "player",
+        "content": req.player_input,
+    })
+    daily_history.append({
+        "role": "narrator",
+        "content": narrative,
+    })
+
+    # 更新状态
+    state["daily_life_round"] = current_round
+    state["daily_life_history"] = daily_history
+
+    # 仅在 AI 返回空选项时提前结束（异常情况兜底）
+    is_done = not options
+    if is_done:
+        state["last_daily_life_context"] = {
+            "last_narrative": narrative,
+            "last_player_input": req.player_input,
+        }
+        state["daily_life_phase"] = False
+        state["daily_life_round"] = 0
+        state["daily_life_total"] = 0
+        state["daily_life_history"] = []
+
+    # 保存状态
+    save_system.save_game(req.session_token, state)
+    logger.info(
+        f"日常生活：token={req.session_token[:8]}..., "
+        f"轮数={current_round}/{total_rounds}, 完成={is_done}"
+    )
+
+    return {
+        "phase": "daily_life",
+        "narrative": narrative,
+        "options": options,
+        "round": current_round,
+        "total": total_rounds,
+        "done": is_done,
+        "stats": state["stats"],
+    }
 
 
 @app.get("/api/session/code")

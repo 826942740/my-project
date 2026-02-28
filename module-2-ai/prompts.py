@@ -11,6 +11,8 @@ prompts.py — Prompt 模板组装
   - format_stats_summary()  将 stats 字典格式化为简短文字
 """
 
+import json
+
 # ──────────────────────────────────────────────
 # 数值字段中文名映射（英文 key → 中文显示名）
 # 注入 Prompt 时使用中文名，避免 AI 将英文字段名输出到旁白
@@ -96,6 +98,7 @@ def build_nav_prompt(
     stats: dict,
     directions: list[dict],
     last_card_context: dict = None,
+    last_daily_life_context: dict = None,
 ) -> list[dict]:
     """
     构建导航旁白 Prompt，返回 OpenAI messages 格式。
@@ -155,15 +158,44 @@ def build_nav_prompt(
         f"语言：{language}"
     )
 
-    # ── 构建上一张卡片上下文段落（可选）──
-    # 有上文时，引导 AI 从上一段遭遇的情绪余韵自然过渡，避免场景硬切
+    # ── 构建前情上下文段落（日常生活上下文优先于卡片上下文）──
+    # 日常生活系统已经处理了时间过渡，导航只需从日常结尾衔接
     prev_section = ""
-    if last_card_context:
+    has_daily_context = False
+
+    if last_daily_life_context:
+        # 日常阶段刚结束：从日常最后的不安预兆自然过渡
+        has_daily_context = True
+        daily_narrative = last_daily_life_context.get("last_narrative", "")
+        daily_input = last_daily_life_context.get("last_player_input", "")
+        prev_section = (
+            f"[日常生活刚刚结束]\n"
+            f"Khem最后做的事：{daily_input}\n"
+            f"日常最后的叙事（以不安预兆收尾）：\n{daily_narrative}\n\n"
+        )
+    elif last_card_context:
+        # 无日常上下文（游戏开头/主线后），用卡片上下文兜底
         prev_title   = last_card_context.get("card_title", "上一段遭遇")
         prev_outcome = "胜利" if last_card_context.get("outcome") == "win" else "失败"
         prev_section = (
             f"[刚刚结束的遭遇]\n"
             f"遭遇名称：{prev_title}，结果：{prev_outcome}\n\n"
+        )
+
+    # ── 根据是否有日常上下文，选择不同的第1段写作指示 ──
+    if has_daily_context:
+        para1_instruction = (
+            f"  第1段：衔接过渡——参考[日常生活刚刚结束]的内容，"
+            f"第一句必须从「Khem最后做的事」起笔，写出这个行动之后她的即时状态，"
+            f"然后从日常最后的不安预兆自然延伸，"
+            f"用1-2句写出Khem重新面对前方未知时的身体反应和心理转变\n"
+        )
+    else:
+        para1_instruction = (
+            f"  第1段：时间过渡——用2-3句带过上次遭遇后Khem这几天的普通生活细节"
+            f"（上课、打工、吃路边摊、在宿舍发呆等曼谷学生日常），"
+            f"让读者感受时间在流逝；如果有[刚刚结束的遭遇]，"
+            f"第一句必须从那段经历的情绪余韵起笔，再过渡到日常\n"
         )
 
     # ── 组装用户提示（User Prompt）──
@@ -185,9 +217,10 @@ def build_nav_prompt(
         f"\n"
         f"[格式要求]\n"
         f"场景描述部分：200-300字，分3段，严格按以下结构展开：\n"
-        f"  第1段：时间过渡——用2-3句带过上次遭遇后Khem这几天的普通生活细节（上课、打工、吃路边摊、在宿舍发呆等曼谷学生日常），让读者感受时间在流逝；如果有[刚刚结束的遭遇]，第一句必须从那段经历的情绪余韵起笔，再过渡到日常\n"
-        f"  第2段：环境铺陈——用多种感官描写Khem当前所在位置的具体氛围（街道名称、气温、声音层次、气味混合），写出曼谷的质感\n"
+        f"{para1_instruction}"
+        f"  第2段：环境铺陈——用多种感官描写Khem当前所在位置的具体氛围（街道名称、气温、声音层次、气味混合），写出当前环境的质感\n"
         f"  第3段：悬念引入——将场景中可感知的几件事自然呈现，以Khem某个细微的身体反应收尾，留悬念，不做解释\n"
+        f"  务必结合之前发生的故事，与用户的输入进行内容生成。"
         f"\n"
         f"场景描述结束后另起一行，严格按以下格式列出 {len(directions)} 个选项"
         f"（禁止加粗**、斜杠/、序号1.2.等格式）：\n"
@@ -285,6 +318,8 @@ def build_card_prompt(
         f"\n"
         f"[规则]\n"
         f"- 以角色身份回应玩家，符合角色性格\n"
+        f"- 【核心规则】npc_response 必须直接回应玩家的具体行动。玩家说了什么、做了什么，角色就要对这个行为作出反应（看到、听到、感受到玩家的动作），禁止无视玩家输入而自行推进剧情\n"
+        f"- 如果玩家输入了不合理/出格的行为，角色按自身性格自然反应（惊讶、愤怒、困惑等），不要假装没发生\n"
         f"- npc_response 必须包含具体的感官细节（声音、温度、气味、触感、视觉变化），通过身体动作和环境反应体现角色性格，保持故事的氛围与张力；禁止只做抽象概括，禁止用'它显得困惑''气氛变得紧张'这类直白描述代替具象细节\n"
         f"- 若玩家连续2轮或以上没有做出有意义的行动（沉默、无关输入、敷衍），应判定为失败\n"
         f"- 胜利（judge=win）需要至少经过2轮有效互动，不在第1轮就判定胜利\n"
@@ -297,7 +332,7 @@ def build_card_prompt(
         f"- 必须返回 JSON，格式如下（无多余文字，无代码块标记）：\n"
         f"\n"
         f'{{\n'
-        f'  "npc_response": "角色的回应文字（3-5句，必须包含感官细节和氛围渲染，通过身体动作、声音、环境变化体现角色性格）",\n'
+        f'  "npc_response": "角色的回应文字（必须包含感官细节和氛围渲染，通过身体动作、声音、环境变化体现角色性格）,必须结合交互历史，用户输出进行内容生成。",\n'
         f'  "judge": "continue 或 win 或 lose",\n'
         f'  "judge_reason": "一句话说明判断理由（内部调试用，不显示给玩家）",\n'
         f'  "options": ["行动选项1（5-8字）", "行动选项2", "行动选项3"]\n'
@@ -326,7 +361,9 @@ def build_card_prompt(
 
     # ── 将对话历史转换为 OpenAI messages 格式 ──
     # player → user（玩家的输入）
-    # npc    → assistant（NPC 的回应）
+    # npc    → assistant（包装为 JSON 格式，与 few-shot 示例保持一致）
+    # 关键修复：历史中 NPC 回应是纯文本，但 few-shot 示例是 JSON 格式，
+    # 格式不一致会导致 AI 忽略对话上下文，生成与玩家输入无关的内容
     for entry in dialogue_history:
         role = entry.get("role", "")
         content = entry.get("content", "")
@@ -334,11 +371,24 @@ def build_card_prompt(
         if role == "player":
             messages.append({"role": "user", "content": content})
         elif role == "npc":
-            messages.append({"role": "assistant", "content": content})
+            # 将纯文本 NPC 回应包装为 JSON 格式，与 few-shot 示例格式一致
+            json_wrapped = json.dumps({
+                "npc_response": content,
+                "judge": "continue",
+                "judge_reason": "对话继续中",
+                "options": []
+            }, ensure_ascii=False)
+            messages.append({"role": "assistant", "content": json_wrapped})
         # 其他未知 role 跳过，避免 API 报错
 
-    # ── 追加玩家本轮输入作为最后一条 user 消息 ──
-    messages.append({"role": "user", "content": player_input})
+    # ── 追加玩家本轮输入作为最后一条 user 消息（加强调包装）──
+    messages.append({
+        "role": "user",
+        "content": (
+            f"Khem的行动：{player_input}\n\n"
+            f"请以角色身份直接回应这个行动。"
+        ),
+    })
 
     return messages
 
@@ -490,3 +540,154 @@ def build_direction_parse_prompt(
             ),
         },
     ]
+
+
+# ──────────────────────────────────────────────
+# 日常生活叙事 Prompt（事件卡间的互动式日常过渡）
+# ──────────────────────────────────────────────
+
+def build_daily_life_prompt(
+    meta: dict,
+    chapter_daily_prompt: str,
+    stats: dict,
+    last_card_context: dict = None,
+    daily_history: list = None,
+    player_input: str = None,
+    current_round: int = 1,
+    total_rounds: int = 3,
+) -> list[dict]:
+    """
+    构建日常生活叙事 Prompt，返回 OpenAI messages 格式。
+
+    事件卡结束后，玩家进入"日常生活阶段"，连续体验几轮日常叙事。
+    每轮 AI 生成一段日常场景描写 + 3 个行动选项，玩家选择或自由输入。
+    第一轮必须从刚结束的事件余韵起笔，最后一轮以不安预兆收尾。
+
+    参数：
+        meta                — 故事包 meta.json 内容（世界观 + 角色设定）
+        chapter_daily_prompt — 当前章节的日常生活写作指导（场景、人物、基调）
+        stats               — 玩家当前 stats 字典
+        last_card_context   — 刚结束的卡片上下文（可选）：
+                              {"card_title": str, "outcome": "win"/"lose", "history": [...]}
+        daily_history       — 日常阶段已有的对话历史：
+                              [{"role": "narrator"/"player", "content": "..."}]
+        player_input        — 玩家本轮输入（第一轮为 None）
+        current_round       — 当前轮数（从 1 开始）
+        total_rounds        — 总轮数
+
+    返回：
+        OpenAI messages 格式
+
+    AI 必须返回的 JSON 格式：
+        {
+          "narrative": "日常叙事文字（200-300字）",
+          "options": ["行动选项1（5-10字）", "行动选项2", "行动选项3"]
+        }
+    """
+    # ── 从 meta 中读取基础信息 ──
+    story_title = meta.get("title", "未知故事")
+    ai_system_prompt = meta.get("ai_system_prompt", "")
+    language = meta.get("language", "zh")
+
+    # ── 格式化 stats 摘要 ──
+    stats_summary = format_stats_summary(stats)
+
+    # ── 判断是否为最后一轮 ──
+    is_last_round = (current_round >= total_rounds)
+
+    # ── 组装系统提示 ──
+    system_content = (
+        f"你是《{story_title}》的叙事者，负责讲述主角 Khem 在超自然事件之间的日常生活。"
+        f"{ai_system_prompt}\n"
+        f"语言：{language}\n"
+        f"\n"
+        f"你必须返回严格的 JSON 格式，不得有多余文字。\n"
+        f"\n"
+        f"[本章日常生活指导]\n"
+        f"{chapter_daily_prompt}\n"
+        f"\n"
+        f"[玩家状态]\n"
+        f"{stats_summary}\n"
+        f"\n"
+        f"[规则]\n"
+        f"- 第二人称「你」指代 Khem，叙事中自然提及她的身份细节\n"
+        f"- 用身体反应表达情绪（后颈发凉、手心出汗、胃在下沉），不用「她感到恐惧」这类直白描述\n"
+        f"- 根据玩家当前数值自然调整叙事基调（护符值低→夜里总醒、功德高→心态稍安），不直接说出数字\n"
+        f"- 每轮写一个不同的日常场景，不要和前几轮重复\n"
+        f"- 【核心规则】叙事必须直接回应玩家的最新行动。无论玩家选了预设选项还是自由输入（包括出格/荒谬的行为），叙事开头就要写这个行动的过程，然后展开后果和周围人的反应。禁止无视玩家输入而编造与之无关的场景\n"
+        f"- 如果玩家输入了不合理/出格的行为，在故事逻辑内合理处理（Khem可以尝试但不一定成功，周围人物按性格自然反应），不要假装没发生\n"
+        f"- 日常场景素材列表仅供生成 options 选项时参考，narrative 叙事必须围绕玩家的实际输入展开，不要自行从列表中挑选场景来写\n"
+        f"- narrative 中不要写行动选项，选项单独放在 options 字段\n"
+        f"- options 里的选项是日常行为（吃饭、散步、找人聊天等），不是战斗动作\n"
+        f"- 必须返回 JSON，格式如下（无多余文字，无代码块标记）：\n"
+        f"\n"
+        f'{{\n'
+        f'  "narrative": "日常叙事文字（200-300字，多用感官细节，分2-3段）",\n'
+        f'  "options": ["行动选项1（5-10字）", "行动选项2", "行动选项3"]\n'
+        f'}}'
+    )
+
+    # ── 构建 messages 列表 ──
+    messages = [{"role": "system", "content": system_content}]
+
+    # ── 构建用户提示（上下文 + 当前轮数信息）──
+    # 第一轮：包含刚结束的事件上下文
+    context_parts = []
+
+    if current_round == 1 and last_card_context:
+        prev_title = last_card_context.get("card_title", "上一段遭遇")
+        prev_outcome = "胜利" if last_card_context.get("outcome") == "win" else "失败"
+        prev_history = last_card_context.get("history", [])
+        # 取最后几轮对话作为参考
+        history_lines = "\n".join(
+            f"{'玩家' if m['role'] == 'player' else '对方'}：{m['content']}"
+            for m in prev_history[-4:]  # 最多取最后4条
+        )
+        context_parts.append(
+            f"[刚刚结束的遭遇]\n"
+            f"遭遇名称：{prev_title}，结果：{prev_outcome}\n"
+            f"最后几轮对话：\n{history_lines}\n"
+        )
+
+    context_parts.append(f"[当前进度] 日常生活第 {current_round} 轮 / 共 {total_rounds} 轮")
+
+    if is_last_round:
+        context_parts.append(
+            "[特别指示] 这是日常阶段的最后一轮。"
+            "叙事结尾用一个微妙的不安细节收尾——某种不对劲的感觉、"
+            "一个说不清楚的预兆，暗示平静即将被打破。"
+            "仍然在 options 中提供3个行动选项（玩家还需要做最后一次选择）。"
+        )
+    elif current_round == 1 and last_card_context:
+        context_parts.append(
+            "[特别指示] 这是日常阶段的第一轮。"
+            "叙事必须从刚结束的遭遇的情绪余韵起笔——"
+            "那件事刚发生不久，Khem还没有完全从中走出来，"
+            "然后自然过渡到日常生活的场景。"
+        )
+
+    initial_user_content = "\n\n".join(context_parts)
+    messages.append({"role": "user", "content": initial_user_content})
+
+    # ── 将日常对话历史转换为 messages 格式 ──
+    # narrator → assistant（AI 的叙事）
+    # player   → user（玩家的选择）
+    for entry in (daily_history or []):
+        role = entry.get("role", "")
+        content = entry.get("content", "")
+        if role == "narrator":
+            messages.append({"role": "assistant", "content": content})
+        elif role == "player":
+            messages.append({"role": "user", "content": content})
+
+    # ── 玩家本轮输入：作为最后一条 user 消息，并强调 AI 必须回应 ──
+    if player_input:
+        messages.append({
+            "role": "user",
+            "content": (
+                f"Khem的行动：{player_input}\n\n"
+                f"请直接从这个行动展开叙事，描写具体过程和后果。"
+            ),
+        })
+
+    return messages

@@ -183,6 +183,14 @@ class GameEngine:
             "map_cards":       map_cards,            # 地图卡片分配 {"行,列": card_id}
             "visited":         [[1, 1]],             # 已访问格子列表
             "main_story_done": [],                   # 已完成的主线索引列表
+            "daily_life_phase": False,               # 是否处于日常生活阶段
+            "daily_life_round": 0,                   # 日常阶段当前轮数
+            "daily_life_total": 0,                   # 日常阶段总轮数
+            "daily_life_history": [],                # 日常阶段对话历史
+            "daily_life_config": self.story["meta"].get("daily_life", {
+                "min_rounds": 3,
+                "max_rounds": 5,
+            }),                                       # 日常生活配置（来自 meta.json）
         }
 
         return initial_state
@@ -443,6 +451,26 @@ class GameEngine:
         new_state["game_cleared"] = False
 
         return new_state
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 日常生活阶段
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def get_daily_life_prompt(self, state: dict) -> str:
+        """
+        获取当前章节的日常生活 Prompt 指导文字。
+
+        从 chapters/chapter_X.json 的 daily_life_prompt 字段读取，
+        每章的日常场景、人物、基调各不相同。
+
+        参数：
+            state: 当前 GameState（从中获取 chapter_idx）
+
+        返回：
+            章节专属的日常生活写作指导文字，未配置则返回空字符串
+        """
+        chapter = self.get_current_chapter(state)
+        return chapter.get("daily_life_prompt", "")
 
     # ─────────────────────────────────────────────────────────────────────────
     # 卡片输入处理（对外接口，转发给 card_runner）
