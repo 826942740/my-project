@@ -572,6 +572,36 @@ input {
   color: var(--text-muted);
 }
 
+.sidebar-chapter-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chapter-info-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #c7cfdd;
+}
+
+.chapter-info-text,
+.chapter-info-list {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-sidebar);
+}
+
+.chapter-objectives {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-sidebar);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 /* 分隔线 */
 .sidebar-divider {
   border: none;

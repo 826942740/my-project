@@ -21,6 +21,8 @@ const TOKEN_KEY = 'fangame_session_token';
 
 // localStorage 中存完整对话历史用的 key（刷新/继续后恢复所有消息）
 const CHAT_LOG_KEY = 'fangame_chat_log';
+const CARD_START_SFX_URL = 'https://butter1.s3.us-east-1.amazonaws.com/rpgmusic/This+is+a+....mp3';
+const CARD_SFX_VOLUME = 0.35;
 
 /**
  * stat 字段对应的 emoji 图标。
@@ -94,6 +96,9 @@ let currentNavOptionTexts = [];
 
 /** 是否正在等待 AI 响应，期间禁止发送 */
 let isLoading = false;
+let pendingChapterInfo = null;
+let cardStartAudio = null;
+let cardStartAudioUnlocked = false;
 
 /* ============================================================
    DOM 元素引用（页面加载后赋值）
@@ -110,6 +115,7 @@ let elGameTitle, elBtnNewGameIngame;
 let elMessageList, elLoadingIndicator;
 let elSidebarChapter, elSidebarPosition, elSidebarStats;
 let elSidebarCard, elSidebarCardTitle, elSidebarCardRound;
+let elSidebarChapterBackground, elSidebarChapterCharacters, elSidebarChapterObjectives;
 let elPhaseLabel, elPlayerInput, elBtnSend;
 
 // 手机端状态条
@@ -147,6 +153,9 @@ document.addEventListener('DOMContentLoaded', () => {
   elSidebarCard        = document.getElementById('sidebar-card');
   elSidebarCardTitle   = document.getElementById('sidebar-card-title');
   elSidebarCardRound   = document.getElementById('sidebar-card-round');
+  elSidebarChapterBackground = document.getElementById('sidebar-chapter-background');
+  elSidebarChapterCharacters = document.getElementById('sidebar-chapter-characters');
+  elSidebarChapterObjectives = document.getElementById('sidebar-chapter-objectives');
 
   elPhaseLabel         = document.getElementById('phase-label');
   elPlayerInput        = document.getElementById('player-input');
@@ -214,6 +223,49 @@ function bindEvents() {
 /**
  * 页面初始化：始终先显示开始界面，如果有存档则在界面上展示存档信息
  */
+function initCardStartSfxIfNeeded() {
+  if (cardStartAudio) return cardStartAudio;
+  try {
+    cardStartAudio = new Audio(CARD_START_SFX_URL);
+    cardStartAudio.preload = 'auto';
+    cardStartAudio.volume = CARD_SFX_VOLUME;
+    cardStartAudio.crossOrigin = 'anonymous';
+  } catch (_) {
+    cardStartAudio = null;
+  }
+  return cardStartAudio;
+}
+
+function unlockCardStartAudio() {
+  if (cardStartAudioUnlocked) return;
+  const audio = initCardStartSfxIfNeeded();
+  if (!audio) return;
+  const p = audio.play();
+  if (p && typeof p.then === 'function') {
+    p.then(() => {
+      audio.pause();
+      audio.currentTime = 0;
+      cardStartAudioUnlocked = true;
+    }).catch(() => {});
+    return;
+  }
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+    cardStartAudioUnlocked = true;
+  } catch (_) {}
+}
+
+function playCardStartSfx() {
+  const audio = initCardStartSfxIfNeeded();
+  if (!audio) return;
+  try {
+    audio.currentTime = 0;
+    const p = audio.play();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (_) {}
+}
+
 async function initGame() {
   // 先显示开始界面，再决定是否展示存档卡片
   showStartScreen();
@@ -235,7 +287,8 @@ async function initGame() {
       // 存档有效：缓存状态，显示存档卡片
       sessionToken = storedToken;
       pendingRestoredState = data.state;
-      showSaveCard(data.state);
+      pendingChapterInfo = data.chapter_info || null;
+      showSaveCard(data.state, pendingChapterInfo);
     } else {
       // 存档已过期
       localStorage.removeItem(TOKEN_KEY);
@@ -251,7 +304,7 @@ async function initGame() {
  * 在开始界面显示存档卡片（章节名 + 坐标）
  * @param {object} state - GameState 对象
  */
-function showSaveCard(state) {
+function showSaveCard(state, chapterInfo = null) {
   const chapterName = state.chapter_name || `第 ${(state.chapter_idx || 0) + 1} 章`;
   const pos = state.position
     ? `(${state.position[0]}, ${state.position[1]})`
@@ -260,6 +313,7 @@ function showSaveCard(state) {
   elSaveChapterInfo.textContent = chapterName;
   elSavePosInfo.textContent = `位置：${pos}`;
   elSaveList.classList.remove('hidden');
+  if (chapterInfo) updateChapterInfo(chapterInfo);
 }
 
 /**
@@ -274,10 +328,11 @@ function enterContinueGame() {
   const hasChatLog = restoreChatLog();
 
   // 恢复游戏状态；若已从 localStorage 还原对话，跳过 card_history 避免重复渲染
-  applyRestoredState(pendingRestoredState, hasChatLog);
+  applyRestoredState(pendingRestoredState, hasChatLog, pendingChapterInfo);
 
   // 清除缓存，避免重复使用
   pendingRestoredState = null;
+  pendingChapterInfo = null;
 }
 
 /**
@@ -285,8 +340,9 @@ function enterContinueGame() {
  * @param {object} state - 后端返回的 GameState 对象
  * @param {boolean} skipCardHistory - 已从 localStorage 恢复对话时传 true，跳过 card_history 重复渲染
  */
-function applyRestoredState(state, skipCardHistory = false) {
+function applyRestoredState(state, skipCardHistory = false, chapterInfo = null) {
   updateSidebar(state);
+  if (chapterInfo) updateChapterInfo(chapterInfo);
 
   // 若 localStorage 没有对话历史（如首次或清除后），则用 card_history 兜底
   if (!skipCardHistory && state.card_history && state.card_history.length > 0) {
@@ -321,6 +377,7 @@ function applyRestoredState(state, skipCardHistory = false) {
  * 游戏界面立即显示，导航旁白再单独异步拉取（避免 AI 生成时长阻塞界面）
  */
 async function startNewGame() {
+  unlockCardStartAudio();
   elBtnNewGame.disabled = true;
   elBtnNewGame.textContent = '正在创建…';
 
@@ -335,9 +392,11 @@ async function startNewGame() {
     // 立刻显示游戏界面和侧边栏
     showGameScreen();
     if (data.state) updateSidebar(data.state);
+    if (data.chapter_info) updateChapterInfo(data.chapter_info);
 
     // 判断是否有开场卡片（prologue 作为第一张卡片）
     if (data.prologue && data.state && data.state.in_card) {
+      playCardStartSfx();
       // 开场卡片模式：显示 prologue 文本 → 进入卡片阶段 → 等玩家交互
       renderMessage('narrative', data.prologue);
       const cardTitle = (data.prologue_card && data.prologue_card.title) || data.state.in_card;
@@ -376,6 +435,7 @@ async function startNewGame() {
  * 点击发送按钮或回车后的处理函数
  */
 function handleSendClick() {
+  unlockCardStartAudio();
   if (isLoading) return;
 
   const text = elPlayerInput.value.trim();
@@ -441,6 +501,7 @@ async function handleNavigate(playerInput, hintDirection = null) {
     body.nav_option_hints = currentNavOptionTexts;
   }
   const data = await apiPost('/api/navigate', body);
+  if (data.chapter_info) updateChapterInfo(data.chapter_info);
 
   // 渲染导航旁白（包含方向解析失败的提示）
   if (data.narrative) {
@@ -467,6 +528,7 @@ async function handleNavigate(playerInput, hintDirection = null) {
 
   // 进入了某张卡片：切换 UI 阶段，异步拉取 AI 入场叙事
   if (data.entered_card) {
+    playCardStartSfx();
     const cardLabel = data.entered_card.title || data.entered_card.card_id || '未知卡片';
     enterCardPhase(cardLabel, null);
 
@@ -490,6 +552,7 @@ async function handleCardAction(playerInput) {
     session_token: sessionToken,
     player_input:  playerInput,
   });
+  if (data.chapter_info) updateChapterInfo(data.chapter_info);
 
   // 渲染 NPC 回应
   if (data.npc_response) {
@@ -568,6 +631,7 @@ async function handleDailyLifeAction(playerInput) {
     session_token: sessionToken,
     player_input:  playerInput,
   });
+  if (data.chapter_info) updateChapterInfo(data.chapter_info);
 
   // 渲染日常叙事
   if (data.narrative) {
@@ -682,9 +746,23 @@ async function fetchNavNarrative() {
 
     // 保存方向列表，供按钮点击时直接使用
     currentNavDirections = data.directions || [];
+    if (data.chapter_info) updateChapterInfo(data.chapter_info);
 
     // 移除加载提示，渲染实际旁白
     loadingEl.remove();
+    if (Array.isArray(data.options) && data.options.length > 0) {
+      if (data.narrative) renderMessage('narrative', data.narrative);
+      const parsed = data.options.map((text, i) => ({
+        label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+        text: String(text || '').trim(),
+        direction: currentNavDirections[i]?.direction || null,
+      })).filter((o) => o.text);
+      currentNavOptionTexts = parsed
+        .filter(o => o.direction)
+        .map(o => ({ direction: o.direction, text: o.text }));
+      if (parsed.length > 0) _appendNavOptionButtons(parsed);
+      return;
+    }
     if (data.narrative) {
       renderNavNarrative(data.narrative);
     }
@@ -826,6 +904,50 @@ function renderMessage(type, content, speakerName = null) {
  */
 function renderNavNarrative(content) {
   if (!content) return;
+  try {
+    const obj = JSON.parse(content);
+    if (obj && typeof obj === 'object' && typeof obj.narrative === 'string' && Array.isArray(obj.options)) {
+      renderMessage('narrative', obj.narrative);
+      const parsedJson = obj.options.map((text, i) => ({
+        label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+        text: String(text || '').trim(),
+        direction: currentNavDirections[i]?.direction || null,
+      })).filter((o) => o.text);
+      currentNavOptionTexts = parsedJson
+        .filter(o => o.direction)
+        .map(o => ({ direction: o.direction, text: o.text }));
+      if (parsedJson.length > 0) _appendNavOptionButtons(parsedJson);
+      return;
+    }
+  } catch (_) {}
+  if (content.includes('"options"')) {
+    const optionsMatch = content.match(/"options"\s*:\s*\[(.*?)\]/s);
+    const options = [];
+    if (optionsMatch) {
+      const quoted = optionsMatch[1].match(/"((?:\\.|[^"\\])*)"/g) || [];
+      quoted.forEach((q) => {
+        const optionText = q.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\\n/g, '\n').trim();
+        if (optionText) options.push(optionText);
+      });
+    }
+    if (options.length > 0) {
+      const narrativeMatch = content.match(/"narrative"\s*:\s*"((?:\\.|[^"\\])*)"/s);
+      if (narrativeMatch) {
+        const narrativeText = narrativeMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\\n/g, '\n').trim();
+        if (narrativeText) renderMessage('narrative', narrativeText);
+      }
+      const parsedFallback = options.map((text, i) => ({
+        label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+        text,
+        direction: currentNavDirections[i]?.direction || null,
+      }));
+      currentNavOptionTexts = parsedFallback
+        .filter(o => o.direction)
+        .map(o => ({ direction: o.direction, text: o.text }));
+      _appendNavOptionButtons(parsedFallback);
+      return;
+    }
+  }
 
   // ─── 格式1：A. / B. / C. 标准选项格式 ───
   const optionRegex = /[A-Ca-c][\.：:）)]\s*(.+)/g;
@@ -892,6 +1014,7 @@ function _appendNavOptionButtons(options) {
     // label 字段保留兼容旧调用，但按钮仅显示模型原始选项文本
     btn.textContent = text;
     btn.addEventListener('click', () => {
+      unlockCardStartAudio();
       if (isLoading) return;
       btn.disabled = true;
       // 点击后立即移除这组选项，防止重复点击和视觉残留
@@ -1002,6 +1125,38 @@ function updateSidebar(state) {
  * 仅更新坐标显示
  * @param {number[]} position - [row, col]
  */
+function updateChapterInfo(chapterInfo) {
+  if (!chapterInfo) return;
+  const background = chapterInfo.background || chapterInfo.chapter_background || '';
+  const characters = chapterInfo.key_characters || chapterInfo.characters || [];
+  const objectives = chapterInfo.objectives || chapterInfo.goals || [];
+
+  if (elSidebarChapterBackground) {
+    elSidebarChapterBackground.textContent = background || '-';
+  }
+  if (elSidebarChapterCharacters) {
+    const chars = Array.isArray(characters) ? characters : [characters];
+    const cleaned = chars.map((v) => String(v || '').trim()).filter(Boolean);
+    elSidebarChapterCharacters.textContent = cleaned.length > 0 ? cleaned.join('\n') : '-';
+  }
+  if (elSidebarChapterObjectives) {
+    elSidebarChapterObjectives.innerHTML = '';
+    const goals = Array.isArray(objectives) ? objectives : [objectives];
+    const cleanedGoals = goals.map((v) => String(v || '').trim()).filter(Boolean);
+    if (cleanedGoals.length === 0) {
+      const li = document.createElement('li');
+      li.textContent = '-';
+      elSidebarChapterObjectives.appendChild(li);
+      return;
+    }
+    cleanedGoals.forEach((goal) => {
+      const li = document.createElement('li');
+      li.textContent = goal;
+      elSidebarChapterObjectives.appendChild(li);
+    });
+  }
+}
+
 function updateSidebarPosition(position) {
   elSidebarPosition.textContent = `位置：(${position[0]}, ${position[1]})`;
 }

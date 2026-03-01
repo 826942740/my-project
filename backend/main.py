@@ -211,6 +211,7 @@ async def new_session(req: NewGameRequest):
         "short_code": short_code,
         "story_id": story_id,
         "state": initial_state,
+        "chapter_info": engine.get_chapter_info(initial_state),
         "prologue": prologue,
         "prologue_card": prologue_card_info,
     }
@@ -229,9 +230,18 @@ async def get_state(token: str = Query(..., description="会话令牌")):
     if state is None:
         raise HTTPException(status_code=404, detail="会话不存在，请开始新游戏")
 
+    # 兜底：服务重启后 engine.story 可能为空，返回 chapter_info 前确保故事包已加载
+    story_id = state.get("story_id", "khemjira")
+    if engine.story is None or engine.story["meta"].get("id") != story_id:
+        try:
+            engine.load_story(story_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"故事包不存在：{story_id}")
+
     return {
         "valid": True,
         "state": state,
+        "chapter_info": engine.get_chapter_info(state),
     }
 
 
@@ -323,6 +333,7 @@ async def navigate(req: NavigateRequest):
                 "phase": "navigation",
                 "narrative": "（此处四面封闭，无路可走。）",
                 "stats": state["stats"],
+                "chapter_info": engine.get_chapter_info(state),
             }
 
     # 引擎移动玩家
@@ -361,6 +372,7 @@ async def navigate(req: NavigateRequest):
             "initial_actions": initial_actions,
         },
         "stats": new_state["stats"],
+        "chapter_info": engine.get_chapter_info(new_state),
     }
 
     if triggered_main_story:
@@ -478,6 +490,7 @@ async def card_action(req: CardActionRequest):
             "card_done": False,
             "effects_log": [],
             "stats": state["stats"],
+            "chapter_info": engine.get_chapter_info(state),
             "game_over": False,
             "options": ai_response.get("options", []),
         }
@@ -558,6 +571,7 @@ async def card_action(req: CardActionRequest):
         "card_done": card_done,
         "effects_log": effects_log,
         "stats": new_state["stats"],
+        "chapter_info": engine.get_chapter_info(new_state),
         "game_over": game_over,
         # judge=continue 时返回 AI 给出的下一步行动选项，结束时返回空列表
         "options": ai_response.get("options", []) if not card_done else [],
@@ -661,6 +675,7 @@ async def daily_life_action(req: DailyLifeRequest):
             "total": total_rounds,
             "done": True,
             "stats": state["stats"],
+            "chapter_info": engine.get_chapter_info(state),
         }
 
     # ── 正常轮次：调用 AI 生成下一段叙事 ──
@@ -733,6 +748,7 @@ async def daily_life_action(req: DailyLifeRequest):
         "total": total_rounds,
         "done": is_done,
         "stats": state["stats"],
+        "chapter_info": engine.get_chapter_info(state),
     }
 
 
@@ -778,12 +794,21 @@ async def resume_session(req: ResumeRequest):
     if state is None:
         raise HTTPException(status_code=500, detail="存档数据损坏，无法恢复")
 
+    # 兜底：恢复存档时也需要 chapter_info，先确保故事包已加载
+    story_id = state.get("story_id", "khemjira")
+    if engine.story is None or engine.story["meta"].get("id") != story_id:
+        try:
+            engine.load_story(story_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"故事包不存在：{story_id}")
+
     logger.info(f"通过短码恢复游戏：code={code}, token={token[:8]}...")
 
     # 导航旁白由前端单独调用 /api/nav 异步获取，不在此处生成
     return {
         "session_token": token,
         "state": state,
+        "chapter_info": engine.get_chapter_info(state),
     }
 
 

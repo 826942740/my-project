@@ -477,6 +477,31 @@ class GameEngine:
         chapter = self.get_current_chapter(state)
         return chapter.get("daily_life_prompt", "")
 
+    def get_chapter_info(self, state: dict) -> dict:
+        """
+        获取当前章节给前端展示的结构化信息。
+
+        返回字段：
+            index          章节序号（从 1 开始）
+            name           章节名
+            background     章节背景摘要
+            key_characters 关键人物列表
+            objectives     任务目标列表
+        """
+        chapter = self.get_current_chapter(state)
+        chapter_ui = chapter.get("chapter_ui", {})
+
+        chapter_idx = int(state.get("chapter_idx", 0))
+        chapter_name = chapter.get("name", f"第 {chapter_idx + 1} 章")
+
+        return {
+            "index": chapter_idx + 1,
+            "name": chapter_name,
+            "background": chapter_ui.get("background", ""),
+            "key_characters": chapter_ui.get("key_characters", []),
+            "objectives": chapter_ui.get("objectives", []),
+        }
+
     # ─────────────────────────────────────────────────────────────────────────
     # 卡片输入处理（对外接口，转发给 card_runner）
     # ─────────────────────────────────────────────────────────────────────────
