@@ -1,0 +1,176 @@
+{
+  "summary": {
+    "generated_at": "2026-03-01 16:32:20",
+    "target_actions": 100,
+    "actions_done": 100,
+    "sessions_created": 1,
+    "issues_total": 15,
+    "issues_by_kind": {
+      "nav_json_leak": 15
+    },
+    "issues_by_severity": {
+      "high": 15
+    },
+    "checks": {
+      "card_resp_checked": 46,
+      "options_lists_checked": 70,
+      "daily_resp_checked": 39,
+      "nav_narrative_checked": 15,
+      "adversarial_inputs_sent": 1
+    },
+    "endpoint_metrics": [
+      {
+        "endpoint": "/api/card_action",
+        "calls": 46,
+        "ok": 46,
+        "fail": 0,
+        "avg_ms": 4644.7,
+        "p95_ms": 7910.9
+      },
+      {
+        "endpoint": "/api/daily_life",
+        "calls": 39,
+        "ok": 39,
+        "fail": 0,
+        "avg_ms": 4078.7,
+        "p95_ms": 6957.2
+      },
+      {
+        "endpoint": "/api/nav",
+        "calls": 15,
+        "ok": 15,
+        "fail": 0,
+        "avg_ms": 3759.3,
+        "p95_ms": 4795.2
+      },
+      {
+        "endpoint": "/api/navigate",
+        "calls": 15,
+        "ok": 15,
+        "fail": 0,
+        "avg_ms": 27.5,
+        "p95_ms": 46.8
+      },
+      {
+        "endpoint": "/api/session/new",
+        "calls": 1,
+        "ok": 1,
+        "fail": 0,
+        "avg_ms": 181.9,
+        "p95_ms": 181.9
+      },
+      {
+        "endpoint": "/api/state",
+        "calls": 100,
+        "ok": 100,
+        "fail": 0,
+        "avg_ms": 3.6,
+        "p95_ms": 5.2
+      }
+    ]
+  },
+  "issues": [
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    },
+    {
+      "kind": "nav_json_leak",
+      "endpoint": "/api/nav",
+      "detail": "json-like narrative leaked to text channel",
+      "severity": "high"
+    }
+  ],
+  "issue_samples": {
+    "nav_json_leak": [
+      "{\n  \"narrative\": \"跟着Jet去图书馆自习之后，我揉着眼睛从长桌起身，背包带勒得肩膀发酸。Jet的笑声还在耳边回荡，可窗外钟楼影子的叠痕让我脚步一滞，喉头紧了紧，我转过身，迎向宿舍街巷的昏黄灯光，手心已微微湿凉。\\n\\n曼谷的这条小巷挤满下课回宿舍的学生，摩托车尾气混着路边摊的鱼露味扑鼻而来，空气闷热得像裹了层湿布，远处便利店的霓虹灯嗡嗡作响，间或有狗吠夹杂在笑闹声里。我的凉鞋踩过温热的柏油路，溅起细碎水花。\\n\\n巷尾的风突然转冷，夹带一股陈腐的湿霉气钻进鼻腔，我脚步慢下来，颈后汗毛一根根竖起，像有目光从暗处黏上我的后背。\",\n  \"options\": [\"加快脚步绕过巷尾\", \"停下查看身后动静\", \"掏出手机打开手电筒\"]\n}",
+      "{\n  \"narrative\": \"让Jet关掉台灯一起躺下睡觉后，我的眼睛在黑暗中适应着宿舍的轮廓，心跳渐缓却未停歇。门外拖沓脚步停顿良久，我翻身坐起，床单上的湿痕仍凉意刺骨，胃壁悄然绞紧，转而面对前方未知时，手心滑腻得紧握床沿。\\n\\n曼谷夜街的热浪裹挟着柴油和街边摊的油烟扑面，通风口的水声混入远处摩托嗡鸣与摊贩叫卖，路面湿滑反射霓虹，空气中泥土腥气与香茅味交织成网，我的鼻翼微动，捕捉那股从身后渗来的凉薄。\\n\\n空气忽冷，我的颈后汗毛竖起，有人影在帘后晃动，似乎在等着，那低沉咕噜如喉中咽气般贴近耳畔，指尖不由自主蜷曲。\",\n  \"options\": [\"靠近帘后查看人影\", \"拉Jet一起退到门口\", \"低声问Jet是否听到动静\"]\n}",
+      "{\n  \"narrative\": \"问Jet书上怎么破影之后，我的心跳在胸腔里微微加速，夕阳拉长的影子还残留在视网膜上，那多出的细长弧线让我脚步不由自主地顿住。起身离开图书馆时，凉意从书页渗入手背延伸到后颈，我强迫自己往前走，脑中回荡着她建议回清迈的话语，却不知前方曼谷的街巷是否已布满更多试探。\\n\\n曼谷的逃离街头，空气闷热夹杂着摩托车尾气和路边摊的油烟味，夕阳余晖洒在斑驳人行道上，远处公交喇叭声混着小贩的叫卖层层叠起，脚下水泥地还残留白日积水的湿滑触感，我的拖鞋踩踏间发出细碎回响。\\n\\n空气突然变冷，我的颈后汗毛一根根竖起，有人影在那个方向晃动，似乎在等着我靠近，某种碎片般的寒意从护符处渗出，手心不由自主地出汗。\",\n  \"options\": [\"放慢脚步观察人影\", \"快步融入人群离开\", \"给Jet发消息问情况\"]\n}",
+      "{\n  \"narrative\": \"问Jet书上怎么破影之后，我从图书馆三楼的窄位起身，夕阳光拉长的影子还印在脑海，那多出的细长弧线让我脚步顿了顿，手心微微出汗。Jet的话在耳边回荡，回清迈的念头刚起就被身后椅子轻移的声音打断，我深吸口气，推门走向校园外街，胃部隐隐下沉，转而面对前方未知的夜色。\\n曼谷的素坤逸路上，闷热空气裹着摩托尾气和街边摊的油烟味扑面，引擎轰鸣混杂着远处寺钟余音，路灯渐次亮起在潮湿柏油路上投下斑驳光斑，我的凉鞋踩过温热的积水洼，发出细碎水声。\\n人群中空气突然变冷，我颈后的汗毛一根根竖起，护符贴肤的凉意加深，像有目光从身后黏附。\",\n  \"options\": [\"加快脚步挤进人群\"]\n}",
+      "{\n  \"narrative\": \"问Jet书上怎么破影之后，我从图书馆座位起身，夕阳拉长的影子还印在脑海，那多出的细长弧线让我脚步稍滞。走出校园时，后颈皮肤微微紧绷，胃部像被凉气拂过，我强迫自己深呼吸，目光移向前方伊善村的入口，那里总有说不清的拉扯感。\\n伊善村的街道上，热带夜风裹着湿土和焚香的余烟，混杂路边摊的油炸味和远处摩托嗡鸣。我的鞋底踩过坑洼水泥，空气闷热黏肤，灯笼摇曳的光斑在墙上碎散，远处低语声层层叠起，像人群在低声议论。\\n庇护处的角落里，冷空气悄然渗来，有人影的轮廓在昏黄灯下若隐若现，等待的意味如手指轻触我的臂弯。手心开始出汗。\",\n  \"options\": [\"停下脚步观察人影\", \"走向角落年轻人\", \"检查Pharan的位置\"]\n}",
+      "{\n  \"narrative\": \"追上Chan要更多咒文细节后，我的手指还残留着捏紧衣角的褶皱，掌心微凉。烟草味渐渐散去，祠堂门在风中轻晃的吱呀声拉回我的视线，前方未知的阴影让我胃部微微收紧，后颈的汗毛悄然竖起。\\n伊善村的庇护街道上，晨风裹挟稻田湿土和焚香的余灰，空气凉意渗入衣领，远处孩童的笑闹混着摩托引擎的低吼，脚下泥路黏腻，每一步都陷进浅浅的积水。阳光从竹叶间洒落，斑驳光影在我的手臂上游移，混杂着淡淡的霉腐气息。\\n冷风忽起拂过脸颊，有人影在祠堂裂缝后晃动，隐约传来低沉的呢喃，角落里另一道身影拉长了，像是静止等待，我的指尖不由自主蜷曲。\",\n  \"options\": [\"走近祠堂裂缝查看\", \"留意角落人影靠近\", \"停步深呼吸观察四周\"]\n}",
+      "{\n  \"narrative\": \"问Jet是否见过Chan商量合作后，我推开木屋的门，烛光拉长我的影子，门外狗叫转为低呜，窗玻璃上多出一道模糊人影。我的胃微微绞紧，转身面对屋内昏黄灯光时，手心已出汗，空气中线香余味缠绕不去。\\n\\n伊善村的庇护木屋里，潮湿木头味混着烛蜡融化的甜腻，窗外稻浪沙沙低语，夜风从门缝钻入带来泥土凉意，角落烛焰摇曳投下长影，狗呜声渐远却回荡在耳边，我的呼吸在闷热中变浅。\\n\\n空气突然变冷，我的颈后汗毛竖起，角落人影晃动像是等着什么，烟灰从肩头滑落，胃里那股绞痛又卷土重来。\",\n  \"options\": [\"走近角落查看人影\", \"叫Jet确认屋内情况\", \"握紧颈间护符观察四周\"]\n}",
+      "{\n  \"narrative\": \"向Pharan多问村里旧债细节后，我握紧小包转身离开她的木楼，脚步在竹林小径上踩出细碎声响，耳边那些跟来的脚步似乎近了些。村道渐宽，我呼出一口气，手心仍旧潮湿，目光不由投向前方未知的灰蒙阴影，心跳开始不齐。\\n伊善村的庇护街道上，湿热的空气裹着线香和泥土的混合味，孩童的笑闹声夹杂摩托引擎的低吼，远处钟声悠长回荡，我的凉鞋底沾满浅浅水洼，反射出阴天下的黯淡光影。\\n空气突然转冷，我颈后的汗毛一根根竖起，某个方向的人影晃动，似乎在静待；同时，细微的脚步又起，像是夜里不速之客，正从暗处悄然逼近，胃部缓缓下沉。\",\n  \"options\": [\"停下脚步倾听四周动静\", \"朝人影方向快步走去\", \"拿出手机给Jet发消息\"]\n}"
+    ]
+  }
+}

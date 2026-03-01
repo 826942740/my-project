@@ -240,6 +240,11 @@ class GameEngine:
                 if card.get("type") == card_type:
                     available_cards.append(card_id)
 
+        # 章节级卡片黑名单：用于屏蔽不应在当前章节出现的卡片（如提前登场角色）
+        card_blacklist = set(chapter.get("card_blacklist", []))
+        if card_blacklist:
+            available_cards = [cid for cid in available_cards if cid not in card_blacklist]
+
         # 如果没有可用卡片，做防御处理
         if not available_cards:
             available_cards = ["unknown_card"]

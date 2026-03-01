@@ -886,7 +886,8 @@ function _appendNavOptionButtons(options) {
   options.forEach(({ label, text, direction }) => {
     const btn = document.createElement('button');
     btn.classList.add('btn', 'nav-option-btn');
-    btn.textContent = `${label}. ${text}`;
+    // label 字段保留兼容旧调用，但按钮仅显示模型原始选项文本
+    btn.textContent = text;
     btn.addEventListener('click', () => {
       if (isLoading) return;
       elPlayerInput.value = '';
