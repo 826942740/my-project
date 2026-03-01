@@ -398,6 +398,9 @@ async function sendInput(text, hintDirection = null) {
     return;
   }
 
+  // 用户已做出输入（按钮/手动），先清理历史选项，避免旧选项残留
+  clearAllOptionGroups();
+
   // 先渲染玩家输入气泡
   renderMessage('player', text);
 
@@ -890,6 +893,9 @@ function _appendNavOptionButtons(options) {
     btn.textContent = text;
     btn.addEventListener('click', () => {
       if (isLoading) return;
+      btn.disabled = true;
+      // 点击后立即移除这组选项，防止重复点击和视觉残留
+      el.remove();
       elPlayerInput.value = '';
       // 导航旁白按钮：直接携带方向，绕过文字解析，100% 准确
       // 卡片按钮：没有 direction，走普通文字输入流程
@@ -900,6 +906,14 @@ function _appendNavOptionButtons(options) {
 
   elMessageList.appendChild(el);
   scrollToBottom();
+}
+
+/**
+ * 清理消息流中所有历史选项按钮组
+ * 用于玩家完成选择后立即收起旧选项，避免重复展示
+ */
+function clearAllOptionGroups() {
+  elMessageList.querySelectorAll('.nav-options').forEach((node) => node.remove());
 }
 
 /**
