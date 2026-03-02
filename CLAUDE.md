@@ -1,4 +1,4 @@
-﻿# CLAUDE.md
+# CLAUDE.md
 
 本文件用于说明仓库当前实现（As-Is），以代码为准。
 
@@ -41,9 +41,43 @@
 - `GET /api/health`
 
 关键返回约定：
-- `/api/nav`：`{"narrative": string, "directions": [...]}`。
+- `/api/nav`：`{"narrative": string, "directions": [...]}`。narrative 字段实际为 AI 返回的 JSON 字符串或纯文本（见已知不一致）。
 - `/api/card_action`：包含 `npc_response/judge/card_done/options/stats`，若进日常还会附带 `daily_life`。
 - `/api/daily_life`：`{"narrative": string, "options": string[], "round": n, "total": n, "done": bool}`。
+
+## Prompt 架构（module-2-ai/prompts.py）
+
+### build_nav_prompt() — 导航旁白
+- **输出格式**：要求 AI 返回严格 JSON `{"narrative": "...", "options": [...]}`
+- **叙事人称**：第一人称（我/我的），禁止使用你/她/Khem 作为叙事主语
+- **上下文优先级**：`last_daily_life_context`（日常最后一轮叙事+玩家输入）> `last_card_context`（上一张卡片结果）
+- **options**：数量与可选方向数一致，纯文本行动短句，禁止任何编号前缀
+
+### build_card_prompt() — 卡片 NPC 对话 + 裁判
+- **输出格式**：严格 JSON `{"npc_response": "...", "judge": "continue/win/lose", "judge_reason": "...", "options": [...]}`
+- **【核心规则】**：npc_response 必须直接承接玩家本轮具体行动，先写行动造成的可见结果，禁止无视玩家输入自行推进剧情
+- **叙事定位**：叙事者+裁判，不强制每轮出对白；非言语实体用声音/温度/气味/触感反馈而非台词
+- **player_input 传入**：包装为 `"Khem的行动：{input}\n\n请以角色身份直接回应这个行动。"`
+- **历史记录**：dialogue_history 中 npc 回应包装为 JSON 格式与 few-shot 示例格式保持一致
+- **options 规则**：紧扣当前 npc_response 内容，三个选项代表不同策略方向（对抗/安抚/回避等），禁止通用选项
+
+### build_daily_life_prompt() — 日常生活叙事
+- **输出格式**：严格 JSON `{"narrative": "...", "options": [...]}`
+- **叙事人称**：第二人称（你），指代 Khem
+- **【核心规则】**：叙事必须直接回应玩家最新行动，叙事开头就写该行动的过程和后果，禁止编造无关场景
+- **开场去模板规则**：首句在4类开场中轮换（环境先行/感官先行/对话先行/动作先行），不得复用相同动作词组
+- **player_input 传入**：包装为 `"Khem的行动：{input}\n\n请直接从这个行动展开叙事，描写具体过程和后果。"`
+- **options 规则**：紧扣刚生成的 narrative 内容，三个不同方向后续行动，禁止照搬素材列表原文
+- **轮次特别指示**：第1轮从卡片情绪余韵起笔；最后一轮以不安预兆收尾；中间轮优先生活细节+关系互动
+
+### build_card_entry_prompt() — 卡片入场叙事
+- **触发时机**：玩家选择方向进入新卡片后，前端异步调用
+- **player_choice_text**：玩家选择的行动文字直接注入为 `[玩家的行动]`
+- **输出**：纯叙事，不含选项，不用问句结尾
+
+### build_direction_parse_prompt() — 方向意图解析
+- **触发时机**：关键词匹配失败时 AI 兜底
+- **输出**：仅返回 `right/down/diagonal` 三者之一
 
 ## 关键流程
 - 导航方向优先级：
@@ -55,15 +89,16 @@
 
 ## 已知限制与风险
 ### Known Mismatch（已知不一致）
-- `build_nav_prompt()` 当前要求导航模型“严格 JSON 输出”。
-- 但导航链路当前实现仍是：
-  - 后端 `generate_nav_narrative()` 返回纯文本（未 `expect_json=True`，未 `json.loads`）。
-  - 前端 `renderNavNarrative()` 用文本正则提取选项（`A/B/C`、`**...**`）。
-- 影响：当模型按 prompt 返回 JSON 时，可能出现 JSON 原文显示或选项解析失败。
+- `build_nav_prompt()` 要求导航模型返回严格 JSON `{"narrative", "options"}`。
+- 但导航链路当前实现：
+  - 后端 `generate_nav_narrative()`：`return ai_client.call(messages)`，未加 `expect_json=True`，未做 `json.loads`。
+  - 前端 `renderNavNarrative()` 做了三层兜底：① `JSON.parse()` ② `"options"` 正则提取 ③ `A./B./C.` 正则。
+- 实际表现：模型返回 JSON → 后端原样传给前端 → 前端①兜底解析成功，功能正常，但链路不规范。
+- **待修**：`generate_nav_narrative()` 加 `expect_json=True` 并 `json.loads`，后端直接返回结构化字段。
 
 ### 其他说明
-- 当前仅通过 prompt 约束 options 无编号；未做后端统一去前缀清洗。
-- 前端按钮文本现为“原始文本直出”，不再自动加 `A./B./C.`。
+- options 无编号仅靠 prompt 约束，未做后端统一去前缀清洗。
+- 前端按钮文本原始文本直出，不自动加 `A./B./C.`。
 
 ## 调试与排查
 - 后端启动：`cd backend && uvicorn main:app --reload --port 8768`
@@ -71,3 +106,4 @@
 - 常见排查点：
   - 导航选项异常：检查 `module-2-ai/prompts.py::build_nav_prompt` 与 `module-1-frontend/game.js::renderNavNarrative`。
   - 卡片/日常 JSON 解析失败：检查 `AIClient._ensure_json` 日志与对应 prompt 的输出格式规则。
+  - AI 忽略玩家输入：检查对应 prompt 的【核心规则】和 player_input 包装格式是否完整。

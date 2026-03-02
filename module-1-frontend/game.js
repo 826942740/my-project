@@ -185,6 +185,9 @@ function bindEvents() {
   // 开始界面：继续上次游戏
   elBtnContinue.addEventListener('click', () => enterContinueGame());
 
+  // 页面加载完成后立即预加载音频，让文件有足够时间缓冲再播放
+  initCardStartSfxIfNeeded();
+
   // 开始界面：新游戏 → 先显示介绍页
   elBtnNewGame.addEventListener('click', () => showIntroScreen());
 
@@ -229,7 +232,6 @@ function initCardStartSfxIfNeeded() {
     cardStartAudio = new Audio(CARD_START_SFX_URL);
     cardStartAudio.preload = 'auto';
     cardStartAudio.volume = CARD_SFX_VOLUME;
-    cardStartAudio.crossOrigin = 'anonymous';
   } catch (_) {
     cardStartAudio = null;
   }
@@ -246,7 +248,7 @@ function unlockCardStartAudio() {
       audio.pause();
       audio.currentTime = 0;
       cardStartAudioUnlocked = true;
-    }).catch(() => {});
+    }).catch((e) => { console.warn('[audio] unlock failed:', e); });
     return;
   }
   try {
@@ -262,7 +264,7 @@ function playCardStartSfx() {
   try {
     audio.currentTime = 0;
     const p = audio.play();
-    if (p && typeof p.catch === 'function') p.catch(() => {});
+    if (p && typeof p.catch === 'function') p.catch((e) => { console.warn('[audio] play failed:', e); });
   } catch (_) {}
 }
 
@@ -520,8 +522,7 @@ async function handleNavigate(playerInput, hintDirection = null) {
 
   // 如果触发了主线剧情
   if (data.triggered_main_story) {
-    // 主线剧情由后端通过 narrative 字段一并返回，这里不额外处理
-    // 后续轮次将由 card_action 处理
+    playCardStartSfx();
     enterCardPhase(null, null);
     return;
   }
