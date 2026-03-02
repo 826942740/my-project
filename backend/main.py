@@ -204,6 +204,7 @@ async def new_session(req: NewGameRequest):
             prologue_card_info = {
                 "title": card.get("title", ""),
                 "initial_actions": card.get("initial_actions", []),
+                "audio_url": card.get("audio_url", ""),
             }
 
     return {
@@ -370,6 +371,7 @@ async def navigate(req: NavigateRequest):
             "title": card_title,
             "scene_description": card_scene,
             "initial_actions": initial_actions,
+            "audio_url": card_config.get("audio_url", "") if card_config else "",
         },
         "stats": new_state["stats"],
         "chapter_info": engine.get_chapter_info(new_state),

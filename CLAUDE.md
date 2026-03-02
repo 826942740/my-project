@@ -100,6 +100,37 @@
 - options 无编号仅靠 prompt 约束，未做后端统一去前缀清洗。
 - 前端按钮文本原始文本直出，不自动加 `A./B./C.`。
 
+## 前端页面流程
+### 页面层级与切换顺序
+```
+start-screen → intro-screen → video-screen → game-screen
+```
+- `start-screen`：无 token 时显示，有存档可继续，或开始新游戏。
+- `intro-screen`：新游戏时显示故事背景、角色说明、初始数值。
+- `video-screen`：点击"开始冒险"后全屏播放开场视频 `/static/startvideo.mp4`，播完或跳过后进入游戏。
+- `game-screen`：主游戏界面。
+
+### 视频播放逻辑（game.js）
+- `showVideoScreen()`：重置 `_videoEnded = false`，调用 `video.play()`；若 play 失败（autoplay 策略或文件缺失）直接 `endVideoAndStart()`。
+- `endVideoAndStart()`：`_videoEnded` 互斥锁防止 `ended` 事件与 `play().catch` 双重触发；调用 `startNewGame()`。
+- 视频文件路径：`module-1-frontend/startvideo.mp4`（由 `/static/startvideo.mp4` 访问）。
+
+## 音频系统
+### 卡片音频（per-card audio）
+- 每张卡片 JSON 中有 `"audio_url"` 字段，存储相对路径如 `/static/soundeffect/xxx.mp3`。
+- 后端在 `/api/session/new`（prologue）和 `/api/card_entry` 响应中透传 `audio_url`。
+- 前端 `playCardStartSfx(url)` 接收 URL，使用 `_audioCache`（Map）缓存 Audio 对象避免重复创建。
+- 若 `audio_url` 为空，回退到 `CARD_START_SFX_URL` 常量（可为空）。
+
+### 静态资源目录约定
+```
+module-1-frontend/
+├── startvideo.mp4          # 开场视频
+└── soundeffect/
+    └── *.mp3               # 卡片音效，路径统一为 /static/soundeffect/文件名.mp3
+```
+所有媒体文件均存放在 `module-1-frontend/` 内，打包后路径不变。
+
 ## 调试与排查
 - 后端启动：`cd backend && uvicorn main:app --reload --port 8768`
 - 健康检查：`GET /api/health`
@@ -107,3 +138,5 @@
   - 导航选项异常：检查 `module-2-ai/prompts.py::build_nav_prompt` 与 `module-1-frontend/game.js::renderNavNarrative`。
   - 卡片/日常 JSON 解析失败：检查 `AIClient._ensure_json` 日志与对应 prompt 的输出格式规则。
   - AI 忽略玩家输入：检查对应 prompt 的【核心规则】和 player_input 包装格式是否完整。
+  - 视频黑屏：检查 `module-1-frontend/startvideo.mp4` 是否存在；浏览器缓存导致旧 game.js 运行时先强刷。
+  - 音频不播放：检查 `audio_url` 字段非空、文件是否在 `module-1-frontend/soundeffect/` 内；浏览器 autoplay 策略需用户手势后才可播放。

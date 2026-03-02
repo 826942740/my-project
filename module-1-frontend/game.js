@@ -99,6 +99,15 @@ let isLoading = false;
 let pendingChapterInfo = null;
 let cardStartAudio = null;
 let cardStartAudioUnlocked = false;
+const _audioCache = new Map();  // URL → Audio 对象缓存，避免同一 URL 重复创建
+let _currentAudio = null;       // 当前正在播放的 Audio 对象
+
+function stopCurrentAudio() {
+  if (_currentAudio) {
+    try { _currentAudio.pause(); _currentAudio.currentTime = 0; } catch (_) {}
+    _currentAudio = null;
+  }
+}
 
 /* ============================================================
    DOM 元素引用（页面加载后赋值）
@@ -123,6 +132,10 @@ let elMobileStatsBar;
 
 // 介绍界面
 let elBtnStartAdventure, elBtnIntroBack;
+
+// 视频界面
+let elVideoScreen, elIntroVideo, elBtnSkipVideo;
+let _videoEnded = false;  // 防止 ended / catch 双触发导致 startNewGame 被调用两次
 
 // 开始界面：存档列表
 let elSaveList, elSaveChapterInfo, elSavePosInfo, elBtnContinue;
@@ -169,6 +182,10 @@ document.addEventListener('DOMContentLoaded', () => {
   elBtnStartAdventure  = document.getElementById('btn-start-adventure');
   elBtnIntroBack       = document.getElementById('btn-intro-back');
 
+  elVideoScreen        = document.getElementById('video-screen');
+  elIntroVideo         = document.getElementById('intro-video');
+  elBtnSkipVideo       = document.getElementById('btn-skip-video');
+
   elMobileStatsBar     = document.getElementById('mobile-stats-bar');
 
   // --- 绑定事件 ---
@@ -191,8 +208,16 @@ function bindEvents() {
   // 开始界面：新游戏 → 先显示介绍页
   elBtnNewGame.addEventListener('click', () => showIntroScreen());
 
-  // 介绍界面：开始冒险 → 真正创建游戏
-  elBtnStartAdventure.addEventListener('click', () => startNewGame());
+  // 介绍界面：开始冒险 → 先播放视频（若无视频元素则直接开始）
+  elBtnStartAdventure.addEventListener('click', () => showVideoScreen());
+
+  // 视频：跳过按钮（null 检查，兼容旧缓存）
+  if (elBtnSkipVideo) {
+    elBtnSkipVideo.addEventListener('click', () => endVideoAndStart());
+  }
+  if (elIntroVideo) {
+    elIntroVideo.addEventListener('ended', () => endVideoAndStart());
+  }
 
   // 介绍界面：返回开始界面
   elBtnIntroBack.addEventListener('click', () => showStartScreen());
@@ -258,9 +283,27 @@ function unlockCardStartAudio() {
   } catch (_) {}
 }
 
-function playCardStartSfx() {
-  const audio = initCardStartSfxIfNeeded();
-  if (!audio) return;
+/**
+ * 播放卡片入场音效
+ * @param {string} [url] 卡片指定的音频 URL；省略或为空时使用默认音效
+ */
+function playCardStartSfx(url) {
+  const src = (url && url.trim()) ? url.trim() : CARD_START_SFX_URL;
+  if (!src) return;
+
+  // 从缓存中获取或新建 Audio 对象
+  let audio = _audioCache.get(src);
+  if (!audio) {
+    try {
+      audio = new Audio(src);
+      audio.preload = 'auto';
+      audio.volume = CARD_SFX_VOLUME;
+      _audioCache.set(src, audio);
+    } catch (_) { return; }
+  }
+
+  stopCurrentAudio();
+  _currentAudio = audio;
   try {
     audio.currentTime = 0;
     const p = audio.play();
@@ -398,7 +441,7 @@ async function startNewGame() {
 
     // 判断是否有开场卡片（prologue 作为第一张卡片）
     if (data.prologue && data.state && data.state.in_card) {
-      playCardStartSfx();
+      playCardStartSfx(data.prologue_card && data.prologue_card.audio_url);
       // 开场卡片模式：显示 prologue 文本 → 进入卡片阶段 → 等玩家交互
       renderMessage('narrative', data.prologue);
       const cardTitle = (data.prologue_card && data.prologue_card.title) || data.state.in_card;
@@ -438,6 +481,7 @@ async function startNewGame() {
  */
 function handleSendClick() {
   unlockCardStartAudio();
+  stopCurrentAudio();
   if (isLoading) return;
 
   const text = elPlayerInput.value.trim();
@@ -529,7 +573,7 @@ async function handleNavigate(playerInput, hintDirection = null) {
 
   // 进入了某张卡片：切换 UI 阶段，异步拉取 AI 入场叙事
   if (data.entered_card) {
-    playCardStartSfx();
+    playCardStartSfx(data.entered_card.audio_url);
     const cardLabel = data.entered_card.title || data.entered_card.card_id || '未知卡片';
     enterCardPhase(cardLabel, null);
 
@@ -1016,6 +1060,7 @@ function _appendNavOptionButtons(options) {
     btn.textContent = text;
     btn.addEventListener('click', () => {
       unlockCardStartAudio();
+      stopCurrentAudio();
       if (isLoading) return;
       btn.disabled = true;
       // 点击后立即移除这组选项，防止重复点击和视觉残留
@@ -1292,6 +1337,7 @@ function showStartScreen() {
   elStartScreen.classList.remove('hidden');
   elIntroScreen.classList.add('hidden');
   elGameScreen.classList.add('hidden');
+  if (elVideoScreen) elVideoScreen.classList.add('hidden');
 }
 
 /** 显示游戏介绍界面 */
@@ -1299,8 +1345,37 @@ function showIntroScreen() {
   elStartScreen.classList.add('hidden');
   elIntroScreen.classList.remove('hidden');
   elGameScreen.classList.add('hidden');
+  if (elVideoScreen) elVideoScreen.classList.add('hidden');
   // 滚动回顶部（防止上次滚到底部）
   elIntroScreen.scrollTop = 0;
+}
+
+/** 显示开场视频界面并播放 */
+function showVideoScreen() {
+  // 若视频元素不存在（旧缓存），直接开始游戏
+  if (!elVideoScreen || !elIntroVideo) {
+    startNewGame();
+    return;
+  }
+  _videoEnded = false;  // 重置互斥锁
+  elStartScreen.classList.add('hidden');
+  elIntroScreen.classList.add('hidden');
+  elGameScreen.classList.add('hidden');
+  elVideoScreen.classList.remove('hidden');
+  elIntroVideo.currentTime = 0;
+  elIntroVideo.play().catch(() => {
+    // 自动播放被阻止 / 视频文件不存在时，直接跳过
+    endVideoAndStart();
+  });
+}
+
+/** 视频结束或跳过：隐藏视频界面，进入游戏（互斥，只执行一次） */
+function endVideoAndStart() {
+  if (_videoEnded) return;
+  _videoEnded = true;
+  if (elIntroVideo) elIntroVideo.pause();
+  if (elVideoScreen) elVideoScreen.classList.add('hidden');
+  startNewGame();
 }
 
 /** 显示游戏界面，隐藏开始界面 */
