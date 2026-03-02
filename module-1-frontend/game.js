@@ -109,6 +109,35 @@ function stopCurrentAudio() {
   }
 }
 
+/**
+ * 播放卡片触发视频，播完或跳过后执行 callback
+ * @param {string} url   视频 URL，为空则直接执行 callback
+ * @param {Function} callback  视频结束后的回调
+ */
+function playCardVideo(url, callback) {
+  if (!url || !url.trim() || !elCardVideoScreen || !elCardVideo) {
+    if (callback) callback();
+    return;
+  }
+  _cardVideoEnded = false;
+  elCardVideo.src = url.trim();
+  elCardVideo.load();
+  elCardVideoScreen.classList.remove('hidden');
+  elCardVideo.play().catch(() => _endCardVideo());
+  // 保存 callback 供 _endCardVideo 调用
+  elCardVideo._onEndCallback = callback;
+}
+
+function _endCardVideo() {
+  if (_cardVideoEnded) return;
+  _cardVideoEnded = true;
+  if (elCardVideo) { try { elCardVideo.pause(); } catch (_) {} }
+  if (elCardVideoScreen) elCardVideoScreen.classList.add('hidden');
+  const cb = elCardVideo && elCardVideo._onEndCallback;
+  if (elCardVideo) elCardVideo._onEndCallback = null;
+  if (cb) cb();
+}
+
 /* ============================================================
    DOM 元素引用（页面加载后赋值）
    ============================================================ */
@@ -127,8 +156,14 @@ let elSidebarCard, elSidebarCardTitle, elSidebarCardRound;
 let elSidebarChapterBackground, elSidebarChapterCharacters, elSidebarChapterObjectives;
 let elPhaseLabel, elPlayerInput, elBtnSend;
 
-// 手机端状态条
+// 手机端状态条 + 章节面板
 let elMobileStatsBar;
+let elBtnChapterInfo, elMobileChapterPanel;
+let elMcpChapter, elMcpPosition, elMcpBackground, elMcpCharacters, elMcpObjectives;
+
+// 卡片触发视频
+let elCardVideoScreen, elCardVideo, elBtnSkipCardVideo;
+let _cardVideoEnded = false;
 
 // 介绍界面
 let elBtnStartAdventure, elBtnIntroBack;
@@ -186,7 +221,17 @@ document.addEventListener('DOMContentLoaded', () => {
   elIntroVideo         = document.getElementById('intro-video');
   elBtnSkipVideo       = document.getElementById('btn-skip-video');
 
-  elMobileStatsBar     = document.getElementById('mobile-stats-bar');
+  elMobileStatsBar       = document.getElementById('mobile-stats-bar');
+  elCardVideoScreen      = document.getElementById('card-video-screen');
+  elCardVideo            = document.getElementById('card-video');
+  elBtnSkipCardVideo     = document.getElementById('btn-skip-card-video');
+  elBtnChapterInfo       = document.getElementById('btn-chapter-info');
+  elMobileChapterPanel = document.getElementById('mobile-chapter-panel');
+  elMcpChapter         = document.getElementById('mcp-chapter');
+  elMcpPosition        = document.getElementById('mcp-position');
+  elMcpBackground      = document.getElementById('mcp-background');
+  elMcpCharacters      = document.getElementById('mcp-characters');
+  elMcpObjectives      = document.getElementById('mcp-objectives');
 
   // --- 绑定事件 ---
   bindEvents();
@@ -199,6 +244,23 @@ document.addEventListener('DOMContentLoaded', () => {
  * 绑定所有按钮、输入框事件
  */
 function bindEvents() {
+  // 卡片视频：跳过按钮
+  if (elBtnSkipCardVideo) {
+    elBtnSkipCardVideo.addEventListener('click', () => _endCardVideo());
+  }
+  if (elCardVideo) {
+    elCardVideo.addEventListener('ended', () => _endCardVideo());
+  }
+
+  // 手机端：章节信息面板开关
+  if (elBtnChapterInfo) {
+    elBtnChapterInfo.addEventListener('click', () => {
+      const isHidden = elMobileChapterPanel.classList.contains('hidden');
+      elMobileChapterPanel.classList.toggle('hidden', !isHidden);
+      elBtnChapterInfo.classList.toggle('active', isHidden);
+    });
+  }
+
   // 开始界面：继续上次游戏
   elBtnContinue.addEventListener('click', () => enterContinueGame());
 
@@ -441,19 +503,22 @@ async function startNewGame() {
 
     // 判断是否有开场卡片（prologue 作为第一张卡片）
     if (data.prologue && data.state && data.state.in_card) {
-      playCardStartSfx(data.prologue_card && data.prologue_card.audio_url);
-      // 开场卡片模式：显示 prologue 文本 → 进入卡片阶段 → 等玩家交互
-      renderMessage('narrative', data.prologue);
-      const cardTitle = (data.prologue_card && data.prologue_card.title) || data.state.in_card;
-      enterCardPhase(cardTitle, null);
-      // 显示初始行动选项按钮
-      const actions = (data.prologue_card && data.prologue_card.initial_actions) || [];
-      if (actions.length >= 2) {
-        _appendNavOptionButtons(actions.map((text, i) => ({
-          label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
-          text,
-        })));
-      }
+      const prologueVideoUrl = data.prologue_card && data.prologue_card.video_url;
+      playCardVideo(prologueVideoUrl, () => {
+        playCardStartSfx(data.prologue_card && data.prologue_card.audio_url);
+        // 开场卡片模式：显示 prologue 文本 → 进入卡片阶段 → 等玩家交互
+        renderMessage('narrative', data.prologue);
+        const cardTitle = (data.prologue_card && data.prologue_card.title) || data.state.in_card;
+        enterCardPhase(cardTitle, null);
+        // 显示初始行动选项按钮
+        const actions = (data.prologue_card && data.prologue_card.initial_actions) || [];
+        if (actions.length >= 2) {
+          _appendNavOptionButtons(actions.map((text, i) => ({
+            label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+            text,
+          })));
+        }
+      });
       // 不调用 fetchNavNarrative()，等卡片结束后再进导航阶段
     } else {
       // 无开场卡片：正常导航流程
@@ -573,7 +638,9 @@ async function handleNavigate(playerInput, hintDirection = null) {
 
   // 进入了某张卡片：切换 UI 阶段，异步拉取 AI 入场叙事
   if (data.entered_card) {
-    playCardStartSfx(data.entered_card.audio_url);
+    playCardVideo(data.entered_card.video_url, () => {
+      playCardStartSfx(data.entered_card.audio_url);
+    });
     const cardLabel = data.entered_card.title || data.entered_card.card_id || '未知卡片';
     enterCardPhase(cardLabel, null);
 
@@ -1145,10 +1212,12 @@ function updateSidebar(state) {
   // 更新章节名
   const chapterName = state.chapter_name || `第 ${(state.chapter_idx || 0) + 1} 章`;
   elSidebarChapter.textContent = `📍 ${chapterName}`;
+  if (elMcpChapter) elMcpChapter.textContent = chapterName;
 
   // 更新坐标
   if (state.position) {
     updateSidebarPosition(state.position);
+    if (elMcpPosition) elMcpPosition.textContent = `(${state.position[0]}, ${state.position[1]})`;
   }
 
   // 更新 stats
@@ -1193,13 +1262,33 @@ function updateChapterInfo(chapterInfo) {
       const li = document.createElement('li');
       li.textContent = '-';
       elSidebarChapterObjectives.appendChild(li);
-      return;
+    } else {
+      cleanedGoals.forEach((goal) => {
+        const li = document.createElement('li');
+        li.textContent = goal;
+        elSidebarChapterObjectives.appendChild(li);
+      });
     }
-    cleanedGoals.forEach((goal) => {
+  }
+
+  // 同步更新手机端章节面板
+  if (elMcpBackground) elMcpBackground.textContent = background || '-';
+  if (elMcpCharacters) {
+    const chars = Array.isArray(characters) ? characters : [characters];
+    elMcpCharacters.textContent = chars.map((v) => String(v || '').trim()).filter(Boolean).join('\n') || '-';
+  }
+  if (elMcpObjectives) {
+    elMcpObjectives.innerHTML = '';
+    const goals = Array.isArray(objectives) ? objectives : [objectives];
+    goals.map((v) => String(v || '').trim()).filter(Boolean).forEach((goal) => {
       const li = document.createElement('li');
       li.textContent = goal;
-      elSidebarChapterObjectives.appendChild(li);
+      elMcpObjectives.appendChild(li);
     });
+    if (!elMcpObjectives.children.length) {
+      const li = document.createElement('li'); li.textContent = '-';
+      elMcpObjectives.appendChild(li);
+    }
   }
 }
 

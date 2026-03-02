@@ -100,6 +100,12 @@
     </div>
   </div>
 
+  <!-- ===== 卡片触发视频蒙层 ===== -->
+  <div id="card-video-screen" class="card-video-screen hidden">
+    <video id="card-video" class="card-video" playsinline preload="auto"></video>
+    <button id="btn-skip-card-video" class="btn-skip-video">跳过 ›</button>
+  </div>
+
   <!-- ===== 开场视频界面 ===== -->
   <div id="video-screen" class="video-screen hidden">
     <video id="intro-video" class="intro-video" playsinline preload="auto">
@@ -115,10 +121,21 @@
     <header class="topbar">
       <span id="game-title" class="topbar-title">Fangame</span>
       <div class="topbar-actions">
+        <!-- 手机端：章节信息按钮（仅移动端显示） -->
+        <button id="btn-chapter-info" class="btn btn-small btn-chapter-info">章</button>
         <!-- 新游戏按钮 -->
         <button id="btn-new-game-ingame" class="btn btn-small btn-danger">新游戏</button>
       </div>
     </header>
+
+    <!-- 手机端：章节信息展开面板（仅移动端显示） -->
+    <div id="mobile-chapter-panel" class="mobile-chapter-panel hidden">
+      <div class="mcp-row"><span class="mcp-label">章节</span><span id="mcp-chapter" class="mcp-value">—</span></div>
+      <div class="mcp-row"><span class="mcp-label">位置</span><span id="mcp-position" class="mcp-value">—</span></div>
+      <div class="mcp-row mcp-block"><span class="mcp-label">背景</span><span id="mcp-background" class="mcp-value">—</span></div>
+      <div class="mcp-row mcp-block"><span class="mcp-label">人物</span><span id="mcp-characters" class="mcp-value">—</span></div>
+      <div class="mcp-row mcp-block"><span class="mcp-label">目标</span><ul id="mcp-objectives" class="mcp-objectives"></ul></div>
+    </div>
 
     <!-- 手机端状态条（仅移动端显示，侧边栏的紧凑替代） -->
     <div id="mobile-stats-bar" class="mobile-stats-bar"></div>

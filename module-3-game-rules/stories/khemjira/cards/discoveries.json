@@ -2,10 +2,15 @@
   {
     "id": "roadside_shrine",
     "audio_url": "",
+    "video_url": "/static/videoeffect/sample.mp4",
     "title": "路边神龛",
     "type": "treasure",
     "scene_description": "路边有个小神龛，供奉的神像看不清面目了，漆都掉了。香炉里的灰是干的，供品早就干掉缩成一团，不知道放了多久。旁边的花瓶是空的。没有人来过这里很久了。但神龛还在那里，没有倒，没有被清走，就这么安静地放着。",
-    "initial_actions": ["停下来，在附近找香或蜡烛", "合掌行礼，诚心致意", "把自己身上的零钱放在供品旁"],
+    "initial_actions": [
+      "停下来，在附近找香或蜡烛",
+      "合掌行礼，诚心致意",
+      "把自己身上的零钱放在供品旁"
+    ],
     "npc": {
       "name": "神龛之灵",
       "personality": "沉默，不主动说话，也不会主动要求什么。只是在这里，见过来来去去的人，大多数都不停脚。它不强求任何人，但如果有人停下来，它能感觉到那个人的心意。",
@@ -13,16 +18,30 @@
       "lose_judge": "玩家直接走过去或者漫不经心地看了一眼就走，视为失败"
     },
     "max_rounds": 3,
-    "win_effects":  [{"stat": "merit",  "delta": 2}, {"stat": "amulet", "delta": 5}],
+    "win_effects": [
+      {
+        "stat": "merit",
+        "delta": 2
+      },
+      {
+        "stat": "amulet",
+        "delta": 5
+      }
+    ],
     "lose_effects": []
   },
   {
     "id": "broken_amulet",
     "audio_url": "",
+    "video_url": "/static/videoeffect/sample.mp4",
     "title": "残破的护符",
     "type": "treasure",
     "scene_description": "你在翻找老房子角落的时候，手碰到了一个东西。拿出来一看，是一个护符，绳子断了，边缘的漆碎了一些，但图样还能认出来——和你戴的是同一个家族的样式。不知道是谁留下来的，也不知道在这里放了多少年。护符本身没有温度，但你握着它的时候，手心里有一种很微弱的感觉。",
-    "initial_actions": ["慢慢拿起护符，双手捧着", "闭上眼睛，感受那份微弱的温度", "轻声说出对祖先的感谢"],
+    "initial_actions": [
+      "慢慢拿起护符，双手捧着",
+      "闭上眼睛，感受那份微弱的温度",
+      "轻声说出对祖先的感谢"
+    ],
     "npc": {
       "name": "护符中的残留意志",
       "personality": "极其微弱，几乎消散了。是某个祖先留下来的保护意志，不知道自己等了多久，等的就是能感应到它的血脉后人来找到它。它不会说话，只能用那点剩下的温度传达。",
@@ -30,16 +49,35 @@
       "lose_judge": "玩家嫌弃它太旧没用，扔下，视为失败"
     },
     "max_rounds": 3,
-    "win_effects":  [{"stat": "amulet", "delta": 20}, {"stat": "merit", "delta": 3}],
-    "lose_effects": [{"stat": "merit",  "delta": -2}]
+    "win_effects": [
+      {
+        "stat": "amulet",
+        "delta": 20
+      },
+      {
+        "stat": "merit",
+        "delta": 3
+      }
+    ],
+    "lose_effects": [
+      {
+        "stat": "merit",
+        "delta": -2
+      }
+    ]
   },
   {
     "id": "old_photograph",
     "audio_url": "",
+    "video_url": "/static/videoeffect/sample.mp4",
     "title": "旧照片",
     "type": "treasure",
     "scene_description": "Pharan 家里的书架上有几本旧书，你随手翻了一本，一张照片从里面滑落出来，掉在地上。你捡起来——黑白的，纸已经发黄，边缘有点卷。是一个女人，面容有些模糊，但她在看镜头，嘴角有一点点弧度，像是在笑，又像是在想什么事情。你看着她，有一种说不清楚的感觉，像是在哪里见过，但你知道不可能。",
-    "initial_actions": ["把照片捧在手心，仔细看她的表情", "闭上眼睛，感受那份情感", "把照片放在心口，静静感受"],
+    "initial_actions": [
+      "把照片捧在手心，仔细看她的表情",
+      "闭上眼睛，感受那份情感",
+      "把照片放在心口，静静感受"
+    ],
     "npc": {
       "name": "照片中的记忆",
       "personality": "不是一个完整的存在，只是一段残留的情感。她不会说话，但她能感觉到你是否真的在看她，还是只是礼貌地确认了一下然后就放下。那种感应是双向的，你越认真地去感受，她的轮廓就越清晰一点。",
@@ -47,16 +85,26 @@
       "lose_judge": "玩家随手放下，装作没看见，或者只是把它夹回书里，视为失败"
     },
     "max_rounds": 3,
-    "win_effects":  [{"stat": "merit",  "delta": 5}],
+    "win_effects": [
+      {
+        "stat": "merit",
+        "delta": 5
+      }
+    ],
     "lose_effects": []
   },
   {
     "id": "merit_offering",
     "audio_url": "",
+    "video_url": "/static/videoeffect/sample.mp4",
     "title": "清晨布施",
     "type": "treasure",
     "scene_description": "清晨五点多，天刚亮，街上几乎没有人。寺庙门口，几个橙色袈裟的僧侣排成一列，安静地站着。他们不开口说话，不抬头看人，只是站在那里。你手里还有一点钱，不多，但你知道布施是干什么的。",
-    "initial_actions": ["掏出钱，恭敬地放入托钵", "鞠躬行礼，布施自己能给的", "双手合十，然后献上布施"],
+    "initial_actions": [
+      "掏出钱，恭敬地放入托钵",
+      "鞠躬行礼，布施自己能给的",
+      "双手合十，然后献上布施"
+    ],
     "npc": {
       "name": "化缘僧侣",
       "personality": "安静，不开口要，不施加任何压力。他们只是站在那里，代表一种可以选择的机会。他们见过太多在这里停下来又走掉的人，不会对任何决定表示评判。",
@@ -64,7 +112,16 @@
       "lose_judge": "玩家以各种理由说自己没钱，或者直接走过去，视为失败"
     },
     "max_rounds": 3,
-    "win_effects":  [{"stat": "merit",  "delta": 6}, {"stat": "cash", "delta": -50}],
+    "win_effects": [
+      {
+        "stat": "merit",
+        "delta": 6
+      },
+      {
+        "stat": "cash",
+        "delta": -50
+      }
+    ],
     "lose_effects": []
   }
 ]
