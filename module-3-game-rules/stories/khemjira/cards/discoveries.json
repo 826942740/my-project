@@ -1,8 +1,8 @@
 [
   {
     "id": "roadside_shrine",
-    "audio_url": "",
-    "video_url": "/static/videoeffect/sample.mp4",
+    "audio_url": "/static/soundeffect/路边神龛.mp3",
+    "video_url": "/static/videoeffect/路边神龛.mp4",
     "title": "路边神龛",
     "type": "treasure",
     "scene_description": "路边有个小神龛，供奉的神像看不清面目了，漆都掉了。香炉里的灰是干的，供品早就干掉缩成一团，不知道放了多久。旁边的花瓶是空的。没有人来过这里很久了。但神龛还在那里，没有倒，没有被清走，就这么安静地放着。",
@@ -32,8 +32,8 @@
   },
   {
     "id": "broken_amulet",
-    "audio_url": "",
-    "video_url": "/static/videoeffect/sample.mp4",
+    "audio_url": "/static/soundeffect/残破的护符.mp3",
+    "video_url": "/static/videoeffect/残破的护符.mp4",
     "title": "残破的护符",
     "type": "treasure",
     "scene_description": "你在翻找老房子角落的时候，手碰到了一个东西。拿出来一看，是一个护符，绳子断了，边缘的漆碎了一些，但图样还能认出来——和你戴的是同一个家族的样式。不知道是谁留下来的，也不知道在这里放了多少年。护符本身没有温度，但你握着它的时候，手心里有一种很微弱的感觉。",
@@ -68,8 +68,8 @@
   },
   {
     "id": "old_photograph",
-    "audio_url": "",
-    "video_url": "/static/videoeffect/sample.mp4",
+    "audio_url": "/static/soundeffect/旧照片.mp3",
+    "video_url": "/static/videoeffect/旧照片.mp4",
     "title": "旧照片",
     "type": "treasure",
     "scene_description": "Pharan 家里的书架上有几本旧书，你随手翻了一本，一张照片从里面滑落出来，掉在地上。你捡起来——黑白的，纸已经发黄，边缘有点卷。是一个女人，面容有些模糊，但她在看镜头，嘴角有一点点弧度，像是在笑，又像是在想什么事情。你看着她，有一种说不清楚的感觉，像是在哪里见过，但你知道不可能。",
@@ -95,8 +95,8 @@
   },
   {
     "id": "merit_offering",
-    "audio_url": "",
-    "video_url": "/static/videoeffect/sample.mp4",
+    "audio_url": "/static/soundeffect/清晨布施.mp3",
+    "video_url": "/static/videoeffect/清晨布施.mp4",
     "title": "清晨布施",
     "type": "treasure",
     "scene_description": "清晨五点多，天刚亮，街上几乎没有人。寺庙门口，几个橙色袈裟的僧侣排成一列，安静地站着。他们不开口说话，不抬头看人，只是站在那里。你手里还有一点钱，不多，但你知道布施是干什么的。",

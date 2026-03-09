@@ -3,6 +3,7 @@
   "name": "竹林·修炼",
   "map_size": {"rows": 4, "cols": 4},
   "card_pool": ["monsters", "npcs", "discoveries"],
+  "card_blacklist": ["jet_plans", "pharan_first_meeting", "lost_soul"],
   "main_story_id": "act_3",
   "chapter_ui": {
     "background": "Pharan开始正式指导Khem。她在竹林与旧木屋间反复训练，在疲惫与感知提升中逐步建立主动掌控力。",

@@ -115,6 +115,46 @@ class AIClient:
         return response_text
 
     # ──────────────────────────────────────────────
+    # 流式调用方法
+    # ──────────────────────────────────────────────
+
+    def stream_call(self, messages: list[dict], force_json: bool = False):
+        """
+        调用 AI API（stream=True），逐块 yield 原始文本 chunk。
+        不做 JSON 验证，由调用方负责解析。
+
+        参数：
+            force_json — True 时开启 response_format=json_object，
+                         让模型强制输出合法 JSON。
+        """
+        kwargs = dict(
+            model=self.model,
+            messages=messages,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            timeout=self.timeout,
+            stream=True,
+        )
+        if force_json:
+            kwargs["response_format"] = {"type": "json_object"}
+        logger.debug(
+            f"[AI流式请求] model={self.model} | force_json={force_json} | messages数量={len(messages)}"
+        )
+        try:
+            stream = self._client.chat.completions.create(**kwargs)
+        except Exception as e:
+            # 如果 API 不支持 response_format + stream 组合，降级
+            if force_json and ("response_format" in str(e) or "400" in str(e)):
+                logger.warning("API 不支持流式 response_format，降级为普通流式")
+                kwargs.pop("response_format", None)
+                stream = self._client.chat.completions.create(**kwargs)
+            else:
+                raise
+        for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    # ──────────────────────────────────────────────
     # 内部辅助方法
     # ──────────────────────────────────────────────
 

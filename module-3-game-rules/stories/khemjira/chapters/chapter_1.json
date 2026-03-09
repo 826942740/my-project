@@ -3,7 +3,7 @@
   "name": "曼谷·逃离",
   "map_size": {"rows": 4, "cols": 4},
   "card_pool": ["monsters", "npcs", "discoveries"],
-  "card_blacklist": ["pharan_first_meeting", "village_monk", "chan_encounter", "pharan_training"],
+  "card_blacklist": ["pharan_first_meeting", "village_monk", "chan_encounter", "pharan_training", "forest_spirit", "vengeful_woman", "chayot_test"],
   "main_story_id": "act_1",
   "chapter_ui": {
     "background": "Khem仍在曼谷读大三，努力维持普通校园生活，但异常感在通勤、食堂、宿舍与夜路中不断累积。",

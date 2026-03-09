@@ -7,7 +7,7 @@
 #   PORT=9000 ./start.sh  # 自定义端口
 
 # 读取端口，默认 8768
-PORT=${PORT:-8768}
+PORT=${PORT:-8769}
 
 # 进入项目根目录
 ROOT_DIR="$(dirname "$0")"

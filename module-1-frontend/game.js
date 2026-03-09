@@ -660,78 +660,66 @@ async function handleNavigate(playerInput, hintDirection = null) {
  * @param {string} playerInput
  */
 async function handleCardAction(playerInput) {
-  const data = await apiPost('/api/card_action', {
-    session_token: sessionToken,
-    player_input:  playerInput,
+  // 流式打字机渲染 NPC 回应
+  const stream = renderMessageStream('npc');
+
+  await new Promise((resolve) => {
+    apiSSE(
+      '/api/card_action', 'POST',
+      { session_token: sessionToken, player_input: playerInput },
+      (char) => stream.appendText(char),
+      (data) => {
+        if (!stream.getText() && data.npc_response) stream.appendText(data.npc_response);
+        stream.finish();
+        if (data.chapter_info) updateChapterInfo(data.chapter_info);
+        if (data.stats) updateSidebarStats(data.stats);
+
+        if (!data.card_done && data.judge) incrementCardRound();
+        if (!data.card_done && data.options && data.options.length >= 1) {
+          _appendNavOptionButtons(data.options.map((text, i) => ({
+            label: ['A', 'B', 'C', 'D'][i] || String(i + 1), text,
+          })));
+        }
+
+        if (data.effects_log && data.effects_log.length > 0) {
+          const logText = data.effects_log.map(entry =>
+            entry.replace(/^([a-z_]+)/, name => STAT_NAMES[name] || name)
+          ).join('  ');
+          renderMessage('system', `结算：${logText}`);
+        }
+        if (data.judge === 'win') renderMessage('system', '胜利！');
+        else if (data.judge === 'lose') renderMessage('warning', '失败！');
+
+        if (data.card_done) {
+          exitCardPhase();
+          if (data.daily_life) {
+            enterDailyLifePhase();
+            renderMessageTypewriter('narrative', data.daily_life.narrative, () => {
+              const acts = data.daily_life.options || [];
+              if (acts.length >= 1) {
+                _appendNavOptionButtons(acts.map((t, i) => ({
+                  label: ['A', 'B', 'C', 'D'][i] || String(i + 1), text: t,
+                })));
+              }
+            });
+          } else if (data.game_over) {
+            renderMessage('warning', '游戏结束。');
+          } else if (data.game_cleared) {
+            renderMessage('main_story', '恭喜你完成了所有章节！感谢你的游玩。');
+          } else {
+            fetchNavNarrative();
+          }
+        }
+        resolve();
+      },
+      (err) => {
+        stream.finish();
+        renderMessage('warning', `卡片行动请求失败（${err.message}），请重试`);
+        resolve();
+      },
+      90000,
+    );
   });
-  if (data.chapter_info) updateChapterInfo(data.chapter_info);
-
-  // 渲染 NPC 回应
-  if (data.npc_response) {
-    // 卡片阶段 NPC 回应用 npc 类型
-    renderMessage('npc', data.npc_response);
-  }
-
-  // 更新 stats
-  if (data.stats) {
-    updateSidebarStats(data.stats);
-  }
-
-  // 更新卡片轮次（从 stats 或其他字段获取，这里直接从侧边栏累加）
-  if (!data.card_done && data.judge) {
-    incrementCardRound();
-  }
-
-  // 显示 AI 给出的下一步行动选项（judge=continue 时，帮助玩家知道可以怎么做）
-  if (!data.card_done && data.options && data.options.length >= 1) {
-    _appendNavOptionButtons(data.options.map((text, i) => ({
-      label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
-      text,
-    })));
-  }
-
-  // 胜负结算效果日志（将英文 stat 名替换为中文显示）
-  if (data.effects_log && data.effects_log.length > 0) {
-    const logText = data.effects_log.map(entry =>
-      entry.replace(/^([a-z_]+)/, name => STAT_NAMES[name] || name)
-    ).join('  ');
-    renderMessage('system', `结算：${logText}`);
-  }
-
-  // 判断结果
-  if (data.judge === 'win') {
-    renderMessage('system', '胜利！');
-  } else if (data.judge === 'lose') {
-    renderMessage('warning', '失败！');
-  }
-
-  // 卡片结束：判断是否进入日常生活阶段，或切回导航阶段
-  if (data.card_done) {
-    exitCardPhase();
-
-    if (data.daily_life) {
-      // 进入日常生活阶段（事件卡结束后的互动式日常过渡）
-      enterDailyLifePhase();
-      renderMessage('narrative', data.daily_life.narrative);
-      // 显示日常行动选项按钮
-      const actions = data.daily_life.options || [];
-      if (actions.length >= 1) {
-        _appendNavOptionButtons(actions.map((text, i) => ({
-          label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
-          text,
-        })));
-      }
-    } else if (data.game_over) {
-      // 游戏结束（HP归零等），不再拉取旁白
-      renderMessage('warning', '游戏结束。');
-    } else if (data.game_cleared) {
-      // 全关通关
-      renderMessage('main_story', '恭喜你完成了所有章节！感谢你的游玩。');
-    } else {
-      // 正常卡片结束，异步拉取下一步导航旁白
-      fetchNavNarrative();
-    }
-  }
 }
 
 /**
@@ -739,36 +727,40 @@ async function handleCardAction(playerInput) {
  * @param {string} playerInput - 玩家选择的行动或自由输入
  */
 async function handleDailyLifeAction(playerInput) {
-  const data = await apiPost('/api/daily_life', {
-    session_token: sessionToken,
-    player_input:  playerInput,
+  const stream = renderMessageStream('narrative');
+
+  await new Promise((resolve) => {
+    apiSSE(
+      '/api/daily_life', 'POST',
+      { session_token: sessionToken, player_input: playerInput },
+      (char) => stream.appendText(char),
+      (data) => {
+        if (!stream.getText() && data.narrative) stream.appendText(data.narrative);
+        stream.finish();
+        if (data.chapter_info) updateChapterInfo(data.chapter_info);
+        if (data.stats) updateSidebarStats(data.stats);
+
+        if (data.done) {
+          enterNavPhase();
+          fetchNavNarrative();
+        } else {
+          const actions = data.options || [];
+          if (actions.length >= 1) {
+            _appendNavOptionButtons(actions.map((text, i) => ({
+              label: ['A', 'B', 'C', 'D'][i] || String(i + 1), text,
+            })));
+          }
+        }
+        resolve();
+      },
+      (err) => {
+        stream.finish();
+        renderMessage('warning', `日常叙事请求失败（${err.message}），请重试`);
+        resolve();
+      },
+      90000,
+    );
   });
-  if (data.chapter_info) updateChapterInfo(data.chapter_info);
-
-  // 渲染日常叙事
-  if (data.narrative) {
-    renderMessage('narrative', data.narrative);
-  }
-
-  // 更新 stats（如果有变化）
-  if (data.stats) {
-    updateSidebarStats(data.stats);
-  }
-
-  // 日常阶段结束 → 回到导航
-  if (data.done) {
-    enterNavPhase();
-    fetchNavNarrative();
-  } else {
-    // 显示下一轮行动选项
-    const actions = data.options || [];
-    if (actions.length >= 1) {
-      _appendNavOptionButtons(actions.map((text, i) => ({
-        label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
-        text,
-      })));
-    }
-  }
 }
 
 /* ============================================================
@@ -840,48 +832,38 @@ function incrementCardRound() {
 async function fetchNavNarrative() {
   if (!sessionToken) return;
 
-  // 插入临时"正在加载"提示（用 data 属性标记，便于之后移除）
-  const loadingEl = document.createElement('div');
-  loadingEl.classList.add('msg', 'msg-system');
-  loadingEl.dataset.navLoading = 'true';
-  const tagSpan = document.createElement('span');
-  tagSpan.classList.add('tag');
-  tagSpan.textContent = '[系统]';
-  loadingEl.appendChild(tagSpan);
-  loadingEl.appendChild(document.createTextNode(' 正在感知周围环境…'));
-  elMessageList.appendChild(loadingEl);
-  scrollToBottom();
+  // 流式打字机渲染 narrative
+  const stream = renderMessageStream('narrative');
 
-  try {
-    // 导航旁白 AI 生成较慢，超时设为 90 秒
-    const data = await apiGet(`/api/nav?token=${encodeURIComponent(sessionToken)}`, 90000);
-
-    // 保存方向列表，供按钮点击时直接使用
-    currentNavDirections = data.directions || [];
-    if (data.chapter_info) updateChapterInfo(data.chapter_info);
-
-    // 移除加载提示，渲染实际旁白
-    loadingEl.remove();
-    if (Array.isArray(data.options) && data.options.length > 0) {
-      if (data.narrative) renderMessage('narrative', data.narrative);
-      const parsed = data.options.map((text, i) => ({
-        label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
-        text: String(text || '').trim(),
-        direction: currentNavDirections[i]?.direction || null,
-      })).filter((o) => o.text);
-      currentNavOptionTexts = parsed
-        .filter(o => o.direction)
-        .map(o => ({ direction: o.direction, text: o.text }));
-      if (parsed.length > 0) _appendNavOptionButtons(parsed);
-      return;
-    }
-    if (data.narrative) {
-      renderNavNarrative(data.narrative);
-    }
-  } catch (err) {
-    loadingEl.remove();
-    renderMessage('warning', `导航旁白加载失败（${err.message}），可输入方向继续`);
-  }
+  await apiSSE(
+    `/api/nav?token=${encodeURIComponent(sessionToken)}`,
+    'GET', null,
+    (char) => stream.appendText(char),
+    (data) => {
+      // 兜底：状态机未提取到 token 时，用 done 数据中的完整文本补渲染
+      if (!stream.getText() && data.narrative) stream.appendText(data.narrative);
+      stream.finish();
+      currentNavDirections = data.directions || [];
+      if (data.chapter_info) updateChapterInfo(data.chapter_info);
+      const options = data.options || [];
+      if (options.length > 0) {
+        const parsed = options.map((text, i) => ({
+          label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+          text: String(text || '').trim(),
+          direction: currentNavDirections[i]?.direction || null,
+        })).filter((o) => o.text);
+        currentNavOptionTexts = parsed
+          .filter(o => o.direction)
+          .map(o => ({ direction: o.direction, text: o.text }));
+        if (parsed.length > 0) _appendNavOptionButtons(parsed);
+      }
+    },
+    (err) => {
+      stream.finish();
+      renderMessage('warning', `导航旁白加载失败（${err.message}），可输入方向继续`);
+    },
+    90000,
+  );
 }
 
 /**
@@ -893,31 +875,9 @@ async function fetchNavNarrative() {
 async function fetchCardEntryNarrative(initialActions) {
   if (!sessionToken) return;
 
-  // 插入临时加载提示
-  const loadingEl = document.createElement('div');
-  loadingEl.classList.add('msg', 'msg-system');
-  const tagSpan = document.createElement('span');
-  tagSpan.classList.add('tag');
-  tagSpan.textContent = '[系统]';
-  loadingEl.appendChild(tagSpan);
-  loadingEl.appendChild(document.createTextNode(' 正在进入场景…'));
-  elMessageList.appendChild(loadingEl);
-  scrollToBottom();
+  const stream = renderMessageStream('narrative');
 
-  try {
-    // 卡片入场叙事 AI 生成，超时设为 90 秒
-    const data = await apiGet(`/api/card_entry?token=${encodeURIComponent(sessionToken)}`, 90000);
-    loadingEl.remove();
-
-    // 渲染 AI 生成的入场叙事
-    if (data.narrative) {
-      renderMessage('narrative', data.narrative);
-    }
-  } catch (err) {
-    loadingEl.remove();
-    renderMessage('warning', `入场叙事加载失败（${err.message}），可直接输入行动`);
-  } finally {
-    // 无论成功或失败，都在叙事之后显示初始行动选项
+  function showActions() {
     if (initialActions.length >= 2) {
       _appendNavOptionButtons(initialActions.map((text, i) => ({
         label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
@@ -925,6 +885,23 @@ async function fetchCardEntryNarrative(initialActions) {
       })));
     }
   }
+
+  await apiSSE(
+    `/api/card_entry?token=${encodeURIComponent(sessionToken)}`,
+    'GET', null,
+    (char) => stream.appendText(char),
+    (data) => {
+      if (!stream.getText() && data.narrative) stream.appendText(data.narrative);
+      stream.finish();
+      showActions();
+    },
+    (err) => {
+      stream.finish();
+      renderMessage('warning', `入场叙事加载失败（${err.message}），可直接输入行动`);
+      showActions();
+    },
+    90000,
+  );
 }
 
 /* ============================================================
@@ -1242,6 +1219,14 @@ function updateSidebar(state) {
  */
 function updateChapterInfo(chapterInfo) {
   if (!chapterInfo) return;
+
+  // 更新章节名称（章节推进时同步刷新）
+  if (chapterInfo.name) {
+    const label = `📍 ${chapterInfo.name}`;
+    if (elSidebarChapter) elSidebarChapter.textContent = label;
+    if (elMcpChapter) elMcpChapter.textContent = chapterInfo.name;
+  }
+
   const background = chapterInfo.background || chapterInfo.chapter_background || '';
   const characters = chapterInfo.key_characters || chapterInfo.characters || [];
   const objectives = chapterInfo.objectives || chapterInfo.goals || [];
@@ -1520,6 +1505,120 @@ async function apiPost(path, body) {
   }
 
   return resp.json();
+}
+
+/**
+ * SSE 流式请求工具
+ * 读取 text/event-stream 响应，将 token/done/error 事件分发给回调。
+ */
+async function apiSSE(path, method, body, onToken, onDone, onError, timeoutMs = 90000) {
+  const controller = new AbortController();
+  const timerId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const fetchOpts = {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    };
+    if (body) fetchOpts.body = JSON.stringify(body);
+
+    const resp = await fetch(API_BASE + path, fetchOpts);
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => '');
+      throw new Error(`HTTP ${resp.status}: ${t}`);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const evt = JSON.parse(line.slice(6));
+          if (evt.type === 'token') onToken(evt.text);
+          else if (evt.type === 'done') onDone(evt);
+          else if (evt.type === 'error') onError?.(new Error(evt.message || 'SSE error'));
+        } catch (_) { /* 忽略解析失败 */ }
+      }
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      onError?.(new Error(`请求超时（>${Math.round(timeoutMs / 1000)}s）`));
+    } else {
+      onError?.(err);
+    }
+  } finally {
+    clearTimeout(timerId);
+  }
+}
+
+/**
+ * 创建打字机消息元素，返回 { appendText(char), finish(fullContent?) }。
+ * 样式类和 badge 与 renderMessage 一致。
+ */
+function renderMessageStream(type, speakerName) {
+  // 懒创建：首个 token 到达时才生成 DOM，避免空气泡
+  let el = null;
+  let textNode = null;
+
+  function _ensureEl() {
+    if (el) return;
+    el = document.createElement('div');
+    el.classList.add('msg', `msg-${type}`);
+    if (type === 'npc' && speakerName) {
+      const s = document.createElement('span');
+      s.classList.add('speaker-name');
+      s.textContent = speakerName;
+      el.appendChild(s);
+    } else if (type === 'system') {
+      const s = document.createElement('span');
+      s.classList.add('tag');
+      s.textContent = '系统';
+      el.appendChild(s);
+    } else if (type === 'warning') {
+      const s = document.createElement('span');
+      s.classList.add('tag');
+      s.textContent = '警告';
+      el.appendChild(s);
+    }
+    textNode = document.createTextNode('');
+    el.appendChild(textNode);
+    elMessageList.appendChild(el);
+    scrollToBottom();
+  }
+
+  return {
+    appendText(c) { _ensureEl(); textNode.textContent += c; scrollToBottom(); },
+    getText() { return textNode ? textNode.textContent : ''; },
+    finish(full) {
+      const content = full ?? (textNode ? textNode.textContent : '');
+      if (!_suppressChatLogSave && content) {
+        saveToChatLog({ type, content, speakerName });
+      }
+    },
+  };
+}
+
+/**
+ * 本地打字机：将已有完整文本逐字显示（非 SSE，用于 done 事件中携带的文本）。
+ */
+function renderMessageTypewriter(type, text, onDone, interval) {
+  if (!text) { onDone?.(); return; }
+  const ms = interval ?? 18;
+  const stream = renderMessageStream(type);
+  let i = 0;
+  (function tick() {
+    if (i < text.length) { stream.appendText(text[i++]); setTimeout(tick, ms); }
+    else { stream.finish(text); onDone?.(); }
+  })();
 }
 
 /**

@@ -3,6 +3,7 @@
   "name": "灵界·决战",
   "map_size": {"rows": 4, "cols": 4},
   "card_pool": ["monsters", "npcs", "discoveries"],
+  "card_blacklist": ["jet_plans", "pharan_first_meeting", "pharan_training", "lost_soul"],
   "main_story_id": "ending",
   "chapter_ui": {
     "background": "决战前夜，村庄进入异常安静的临战状态。Khem、Pharan与Jet分别完成准备、告别与定心。",

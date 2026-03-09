@@ -3,7 +3,7 @@
   "card": {
     "id": "prologue_event",
     "audio_url": "/static/soundeffect/kaichangbai.mp3",
-    "video_url": "/static/videoeffect/sample.mp4",
+    "video_url": "",
     "title": "午夜来客",
     "type": "prologue",
     "scene_description": "漆黑的卧室里，蜡烛全部熄灭，胸口的佛牌裂开了一道缝。门外传来黏腻的脚步声，门把手正在一寸一寸地转动。",

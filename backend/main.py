@@ -13,6 +13,7 @@ main.py — FastAPI 后端主入口
 """
 
 import sys
+import re
 import json
 import random
 import logging
@@ -31,7 +32,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import copy
 
@@ -157,6 +158,112 @@ def generate_nav_narrative(state: dict) -> str:
         last_daily_life_context=state.get("last_daily_life_context"),
     )
     return ai_client.call(messages)
+
+
+# ──────────────────────────────────────────────
+# SSE 流式输出工具
+# ──────────────────────────────────────────────
+
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "X-Accel-Buffering": "no",
+    "Connection": "keep-alive",
+}
+
+
+def _sse_event(data: dict) -> str:
+    """构造一条 SSE data 行"""
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _stream_json_field_sse(messages: list, field_name: str, meta_builder):
+    """
+    从 AI 流式 JSON 响应中实时提取指定字段值，逐字符 yield SSE token 事件。
+    流结束后调用 meta_builder(full_text) 构造 done 事件。
+
+    状态机：SEARCH → IN_VALUE → DONE_VALUE
+    - SEARCH：在累积缓冲区中寻找 "field_name": "
+    - IN_VALUE：逐字符 yield，处理 JSON 转义
+    - DONE_VALUE：遇到未转义 " 结束字段提取
+    """
+    full_text = ""
+    # 状态：0=SEARCH, 1=IN_VALUE, 2=DONE_VALUE
+    state = 0
+    # value_pos: 下一个待处理的 full_text 索引（仅 IN_VALUE 阶段使用）
+    value_pos = 0
+    search_key = f'"{field_name}"'
+
+    try:
+        for raw_chunk in ai_client.stream_call(messages, force_json=True):
+            full_text += raw_chunk
+
+            # SEARCH 阶段：在累积文本中查找字段
+            if state == 0:
+                idx = full_text.find(search_key)
+                if idx < 0:
+                    continue
+                # 找到字段名，定位到冒号后第一个引号
+                after = full_text[idx + len(search_key):]
+                colon_pos = after.find(':')
+                if colon_pos < 0:
+                    continue
+                rest = after[colon_pos + 1:].lstrip()
+                if not rest or rest[0] != '"':
+                    continue
+                # 进入 IN_VALUE，value_pos 指向 opening quote 之后
+                state = 1
+                value_pos = len(full_text) - len(rest) + 1
+
+            # IN_VALUE 阶段：逐字符处理并 yield
+            if state == 1:
+                while value_pos < len(full_text):
+                    c = full_text[value_pos]
+                    if c == '\\':
+                        # 转义符在 chunk 末尾 → 等下一 chunk
+                        if value_pos + 1 >= len(full_text):
+                            break
+                        nc = full_text[value_pos + 1]
+                        char = {'n': '\n', 't': '\t', 'r': '\r',
+                                '"': '"', '\\': '\\'}.get(nc, nc)
+                        yield _sse_event({"type": "token", "text": char})
+                        value_pos += 2
+                    elif c == '"':
+                        # 字段值结束
+                        state = 2
+                        value_pos += 1
+                        break
+                    else:
+                        yield _sse_event({"type": "token", "text": c})
+                        value_pos += 1
+
+        # 流结束 → 清理 <think> 块，构造 done 事件
+        cleaned = re.sub(r'<think>.*?</think>\s*', '', full_text, flags=re.DOTALL).strip()
+        meta = meta_builder(cleaned)
+        yield _sse_event({"type": "done", **meta})
+
+    except Exception as e:
+        logger.error(f"SSE 流异常：{e}", exc_info=True)
+        yield _sse_event({"type": "error", "message": str(e)})
+
+
+def _stream_plain_sse(messages: list, meta_builder):
+    """
+    纯文本流式 SSE（不解析 JSON 字段，直接逐 chunk 输出）。
+    适用于 card_entry 等返回纯文本叙事的端点。
+    """
+    full_text = ""
+    try:
+        for raw_chunk in ai_client.stream_call(messages):
+            full_text += raw_chunk
+            yield _sse_event({"type": "token", "text": raw_chunk})
+
+        cleaned = re.sub(r'<think>.*?</think>\s*', '', full_text, flags=re.DOTALL).strip()
+        meta = meta_builder(cleaned)
+        yield _sse_event({"type": "done", **meta})
+
+    except Exception as e:
+        logger.error(f"SSE plain 流异常：{e}", exc_info=True)
+        yield _sse_event({"type": "error", "message": str(e)})
 
 
 # ──────────────────────────────────────────────
@@ -390,23 +497,7 @@ async def navigate(req: NavigateRequest):
 @app.post("/api/card_action")
 async def card_action(req: CardActionRequest):
     """
-    卡片阶段：玩家在卡片副本内对话。
-
-    流程：
-      1. 加载并验证当前状态（必须在卡片阶段）
-      2. 获取当前卡片配置
-      3. 构建卡片 Prompt，调用 AI（NPC 回应 + 裁判判断合并一次调用）
-      4. 解析 AI 返回的 JSON
-      5. 引擎处理本轮结果（更新 stats，判断卡片结束）
-      6. 保存新状态
-      7. 如果卡片结束，同时生成下一步导航旁白
-
-    AI 返回格式（JSON）：
-      {
-        "npc_response": "NPC 的回应文字",
-        "judge": "continue / win / lose",
-        "judge_reason": "裁判理由（调试用）"
-      }
+    卡片阶段：玩家在卡片副本内对话（SSE 流式输出 npc_response）。
     """
     # 加载状态
     state = save_system.load_game(req.session_token)
@@ -419,14 +510,12 @@ async def card_action(req: CardActionRequest):
         f"input={req.player_input!r}"
     )
 
-    # 验证当前阶段：必须是卡片阶段（in_card 不为 None）
     if state.get("in_card") is None:
         raise HTTPException(
             status_code=400,
             detail="当前在导航阶段，请使用 /api/navigate 选择移动方向"
         )
 
-    # 确保故事包已加载
     story_id = state.get("story_id", "dark_forest")
     if engine.story is None or engine.story["meta"].get("id") != story_id:
         try:
@@ -434,7 +523,6 @@ async def card_action(req: CardActionRequest):
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail=f"故事包不存在：{story_id}")
 
-    # 获取当前卡片配置
     card = engine.get_current_card(state)
     if card is None:
         raise HTTPException(
@@ -442,159 +530,156 @@ async def card_action(req: CardActionRequest):
             detail=f"找不到卡片配置：{state.get('in_card')}"
         )
 
-    # 构建卡片 Prompt（NPC + 裁判合并一次调用）
     messages = build_card_prompt(
         meta=get_meta(story_id),
         card=card,
         stats=state["stats"],
         dialogue_history=state.get("card_history", []),
         player_input=req.player_input,
-        current_round=state.get("card_round", 0) + 1,  # 显示给 AI 的轮数从 1 开始
+        current_round=state.get("card_round", 0) + 1,
     )
 
-    # 调用 AI（expect_json=True，自动重试保证格式正确）
-    # 外层 try 捕获 AI 完全失败的情况（重试耗尽后抛出 ValueError）
-    ai_response = None
-    try:
-        ai_resp_str = ai_client.call(messages, expect_json=True)
-        try:
-            ai_response = json.loads(ai_resp_str)
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.error(f"AI 返回无法解析为 JSON：{e}，原始内容：{ai_resp_str[:200]}")
-    except Exception as e:
-        logger.error(f"AI 调用彻底失败（重试耗尽）：{e}")
-
-    # 无论哪种失败，都用降级响应兜底，避免游戏卡死
-    if ai_response is None:
-        ai_response = {
-            "npc_response": "（AI 响应异常，请重试）",
-            "judge": "continue",
-            "judge_reason": "AI调用失败，降级处理",
-            "options": [],
-        }
-
-    # ── 引擎处理本轮（更新对话历史、数值结算、判断卡片结束）──
-    # 外层 try 捕获引擎处理中的意外异常（如 state 字段缺失导致 KeyError），
-    # 避免直接返回 500，改为降级响应让游戏继续
-    try:
-        card_result = process_card_turn(state, card, req.player_input, ai_response)
-        new_state = card_result["new_state"]
-        card_done = card_result["card_done"]
-        outcome = card_result["outcome"]
-        effects_log = card_result["effects_log"]
-        game_over = card_result["game_over"]
-    except Exception as e:
-        # 引擎处理失败，降级为"继续对话"，不让游戏卡死
-        logger.error(f"process_card_turn 异常，降级处理：{e}", exc_info=True)
-        # 保留原 state 不做修改，返回降级响应
-        return {
-            "phase": "card",
-            "npc_response": ai_response.get("npc_response", "（系统异常，请重试）"),
-            "judge": "continue",
-            "card_done": False,
-            "effects_log": [],
-            "stats": state["stats"],
-            "chapter_info": engine.get_chapter_info(state),
-            "game_over": False,
-            "options": ai_response.get("options", []),
-        }
-
-    # 如果主线胜利且游戏未结束，推进到下一章节
-    # 必须同时满足：卡片结束 + 胜利（outcome=win） + 未死亡 + 是主线卡片
-    # 修复 Bug：之前缺少 outcome == "win" 检查，导致主线失败时也触发章节推进，
-    #          advance_chapter 会重置 position=[1,1] 和 visited，引发位置重置 bug
-    if card_done and outcome == "win" and not game_over and card.get("type") == "main_story":
-        try:
-            new_state = engine.advance_chapter(new_state)
-            logger.info(f"主线完成，章节推进至：{new_state.get('chapter_idx')}")
-        except Exception as e:
-            # 章节推进失败，记录日志但不中断（卡片已结算成功）
-            logger.error(f"advance_chapter 异常：{e}", exc_info=True)
-
-    # ── 事件卡结束后启动日常生活阶段 ─────────────────────────────────────
-    # monster/npc/treasure 结束后 → 进入日常阶段（AI 生成叙事，玩家互动式探索）
-    daily_narrative = None
-    daily_options = None
-    if card_done and not game_over and not new_state.get("game_cleared"):
-        card_type = card.get("type", "")
-
-        if card_type in ("monster", "npc", "treasure", "prologue"):
-            # 启动日常生活阶段（清除上一轮残留的日常上下文）
-            new_state.pop("last_daily_life_context", None)
-            dl_config = new_state.get("daily_life_config", {})
-            total_rounds = random.randint(
-                dl_config.get("min_rounds", 3),
-                dl_config.get("max_rounds", 5),
-            )
-            new_state["daily_life_phase"] = True
-            new_state["daily_life_round"] = 0
-            new_state["daily_life_total"] = total_rounds
-            new_state["daily_life_history"] = []
-
-            # 生成第一轮日常叙事（结合刚结束的事件上下文）
-            try:
-                daily_prompt_text = engine.get_daily_life_prompt(new_state)
-                dl_messages = build_daily_life_prompt(
-                    meta=get_meta(story_id),
-                    chapter_daily_prompt=daily_prompt_text,
-                    stats=new_state["stats"],
-                    last_card_context=new_state.get("last_card_context"),
-                    daily_history=[],
-                    player_input=None,  # 第一轮无玩家输入
-                    current_round=1,
-                    total_rounds=total_rounds,
-                )
-                dl_resp_str = ai_client.call(dl_messages, expect_json=True)
-                dl_resp = json.loads(dl_resp_str)
-                daily_narrative = dl_resp.get("narrative", "")
-                daily_options = dl_resp.get("options", [])
-
-                # 记录第一轮到日常对话历史
-                new_state["daily_life_round"] = 1
-                new_state["daily_life_history"].append({
-                    "role": "narrator",
-                    "content": daily_narrative,
-                })
-            except Exception as e:
-                logger.error(f"日常叙事生成失败：{e}", exc_info=True)
-                # 生成失败则跳过日常阶段，直接回导航
-                new_state["daily_life_phase"] = False
-
-    # 保存新状态
-    save_system.save_game(req.session_token, new_state)
-    logger.info(
-        f"卡片对话：token={req.session_token[:8]}..., "
-        f"卡片={state['in_card']}, 结果={outcome}, 卡片完成={card_done}"
-    )
-
-    # 构建返回数据
-    response = {
-        "phase": "card",
-        "npc_response": ai_response.get("npc_response", ""),
-        "judge": outcome,
-        "card_done": card_done,
-        "effects_log": effects_log,
-        "stats": new_state["stats"],
-        "chapter_info": engine.get_chapter_info(new_state),
-        "game_over": game_over,
-        # judge=continue 时返回 AI 给出的下一步行动选项，结束时返回空列表
-        "options": ai_response.get("options", []) if not card_done else [],
+    # ── 流结束后：解析 JSON → 引擎结算 → 保存 → 构造 done 事件 ──
+    # 用 captured 容器避免闭包中 nonlocal 赋值的问题
+    captured = {
+        "session_token": req.session_token,
+        "player_input": req.player_input,
+        "state": state,
+        "card": card,
+        "story_id": story_id,
     }
 
-    # 卡片结束时，通知前端是否通关
-    if card_done and not game_over:
-        response["game_cleared"] = bool(new_state.get("game_cleared"))
+    def meta_builder(full_text):
+        _state = captured["state"]
+        _card = captured["card"]
+        _story_id = captured["story_id"]
+        _token = captured["session_token"]
+        _player_input = captured["player_input"]
 
-    # 如果进入了日常生活阶段，附带第一轮叙事和选项
-    if daily_narrative:
-        response["daily_life"] = {
-            "narrative": daily_narrative,
-            "options": daily_options or [],
-            "round": 1,
-            "total": new_state["daily_life_total"],
+        # 解析 AI JSON
+        ai_response = None
+        try:
+            ai_response = json.loads(full_text)
+        except Exception:
+            # 尝试提取 JSON 子串
+            start = full_text.find('{')
+            end = full_text.rfind('}')
+            if start != -1 and end > start:
+                try:
+                    ai_response = json.loads(full_text[start:end + 1])
+                except Exception:
+                    pass
+        if ai_response is None:
+            logger.error(f"card_action JSON 解析失败，降级。前200字：{full_text[:200]}")
+            ai_response = {
+                "npc_response": full_text or "（AI 响应异常，请重试）",
+                "judge": "continue",
+                "judge_reason": "JSON解析失败",
+                "options": [],
+            }
+
+        # 引擎结算
+        try:
+            card_result = process_card_turn(_state, _card, _player_input, ai_response)
+            new_state = card_result["new_state"]
+            card_done = card_result["card_done"]
+            outcome = card_result["outcome"]
+            effects_log = card_result["effects_log"]
+            game_over = card_result["game_over"]
+        except Exception as e:
+            logger.error(f"process_card_turn 异常：{e}", exc_info=True)
+            return {
+                "phase": "card",
+                "npc_response": ai_response.get("npc_response", ""),
+                "judge": "continue",
+                "card_done": False,
+                "effects_log": [],
+                "stats": _state["stats"],
+                "chapter_info": engine.get_chapter_info(_state),
+                "game_over": False,
+                "options": ai_response.get("options", []),
+            }
+
+        # 主线胜利推进章节
+        if card_done and outcome == "win" and not game_over and _card.get("type") == "main_story":
+            try:
+                new_state = engine.advance_chapter(new_state)
+                logger.info(f"主线完成，章节推进至：{new_state.get('chapter_idx')}")
+            except Exception as e:
+                logger.error(f"advance_chapter 异常：{e}", exc_info=True)
+
+        # 事件卡结束后启动日常生活
+        daily_payload = None
+        if card_done and not game_over and not new_state.get("game_cleared"):
+            card_type = _card.get("type", "")
+            if card_type in ("monster", "npc", "treasure", "prologue"):
+                new_state.pop("last_daily_life_context", None)
+                dl_config = new_state.get("daily_life_config", {})
+                total_rounds = random.randint(
+                    dl_config.get("min_rounds", 3),
+                    dl_config.get("max_rounds", 5),
+                )
+                new_state["daily_life_phase"] = True
+                new_state["daily_life_round"] = 0
+                new_state["daily_life_total"] = total_rounds
+                new_state["daily_life_history"] = []
+                try:
+                    daily_prompt_text = engine.get_daily_life_prompt(new_state)
+                    dl_messages = build_daily_life_prompt(
+                        meta=get_meta(_story_id),
+                        chapter_daily_prompt=daily_prompt_text,
+                        stats=new_state["stats"],
+                        last_card_context=new_state.get("last_card_context"),
+                        daily_history=[],
+                        player_input=None,
+                        current_round=1,
+                        total_rounds=total_rounds,
+                    )
+                    dl_resp_str = ai_client.call(dl_messages, expect_json=True)
+                    dl_resp = json.loads(dl_resp_str)
+                    new_state["daily_life_round"] = 1
+                    new_state["daily_life_history"].append({
+                        "role": "narrator",
+                        "content": dl_resp.get("narrative", ""),
+                    })
+                    daily_payload = {
+                        "narrative": dl_resp.get("narrative", ""),
+                        "options": dl_resp.get("options", []),
+                        "round": 1,
+                        "total": total_rounds,
+                    }
+                except Exception as e:
+                    logger.error(f"日常叙事生成失败：{e}", exc_info=True)
+                    new_state["daily_life_phase"] = False
+
+        save_system.save_game(_token, new_state)
+        logger.info(
+            f"卡片对话：token={_token[:8]}..., "
+            f"卡片={_state.get('in_card')}, 结果={outcome}, 卡片完成={card_done}"
+        )
+
+        result = {
+            "phase": "card",
+            "npc_response": ai_response.get("npc_response", ""),
+            "judge": outcome,
+            "card_done": card_done,
+            "effects_log": effects_log,
+            "stats": new_state["stats"],
+            "chapter_info": engine.get_chapter_info(new_state),
+            "game_over": game_over,
+            "options": ai_response.get("options", []) if not card_done else [],
         }
+        if card_done and not game_over:
+            result["game_cleared"] = bool(new_state.get("game_cleared"))
+        if daily_payload:
+            result["daily_life"] = daily_payload
+        return result
 
-    return response
+    return StreamingResponse(
+        _stream_json_field_sse(messages, "npc_response", meta_builder),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
 
 
 @app.post("/api/daily_life")
@@ -671,7 +756,9 @@ async def daily_life_action(req: DailyLifeRequest):
             f"最后输入={req.player_input!r}"
         )
 
-        return {
+        # 前端始终用 apiSSE() 调用本端点，必须返回 SSE 格式
+        done_payload = {
+            "type": "done",
             "phase": "daily_life",
             "narrative": "",
             "options": [],
@@ -682,12 +769,18 @@ async def daily_life_action(req: DailyLifeRequest):
             "chapter_info": engine.get_chapter_info(state),
         }
 
-    # ── 正常轮次：调用 AI 生成下一段叙事 ──
+        def _single_done():
+            yield _sse_event(done_payload)
+
+        return StreamingResponse(
+            _single_done(),
+            media_type="text/event-stream",
+            headers=_SSE_HEADERS,
+        )
+
+    # ── 正常轮次：SSE 流式输出叙事 ──
     daily_history = state.get("daily_life_history", [])
 
-    # 构建日常叙事 Prompt
-    # player_input 单独传入，让 prompt 在上下文中强调玩家行动
-    # history 只包含之前轮次的完整记录，避免重复
     daily_prompt_text = engine.get_daily_life_prompt(state)
     dl_messages = build_daily_life_prompt(
         meta=get_meta(story_id),
@@ -700,60 +793,83 @@ async def daily_life_action(req: DailyLifeRequest):
         total_rounds=total_rounds,
     )
 
-    # 调用 AI
-    try:
-        dl_resp_str = ai_client.call(dl_messages, expect_json=True)
-        dl_resp = json.loads(dl_resp_str)
-        narrative = dl_resp.get("narrative", "")
-        options = dl_resp.get("options", [])
-    except Exception as e:
-        logger.error(f"日常叙事 AI 调用失败：{e}", exc_info=True)
-        narrative = "（日常叙事生成失败，跳过本段日常。）"
-        options = []
-
-    # 记录玩家输入 + AI 叙事到对话历史
-    daily_history.append({
-        "role": "player",
-        "content": req.player_input,
-    })
-    daily_history.append({
-        "role": "narrator",
-        "content": narrative,
-    })
-
-    # 更新状态
-    state["daily_life_round"] = current_round
-    state["daily_life_history"] = daily_history
-
-    # 仅在 AI 返回空选项时提前结束（异常情况兜底）
-    is_done = not options
-    if is_done:
-        state["last_daily_life_context"] = {
-            "last_narrative": narrative,
-            "last_player_input": req.player_input,
-        }
-        state["daily_life_phase"] = False
-        state["daily_life_round"] = 0
-        state["daily_life_total"] = 0
-        state["daily_life_history"] = []
-
-    # 保存状态
-    save_system.save_game(req.session_token, state)
-    logger.info(
-        f"日常生活：token={req.session_token[:8]}..., "
-        f"轮数={current_round}/{total_rounds}, 完成={is_done}"
-    )
-
-    return {
-        "phase": "daily_life",
-        "narrative": narrative,
-        "options": options,
-        "round": current_round,
-        "total": total_rounds,
-        "done": is_done,
-        "stats": state["stats"],
-        "chapter_info": engine.get_chapter_info(state),
+    # 闭包捕获
+    captured = {
+        "session_token": req.session_token,
+        "player_input": req.player_input,
+        "state": state,
+        "daily_history": daily_history,
+        "current_round": current_round,
+        "total_rounds": total_rounds,
     }
+
+    def meta_builder(full_text):
+        _state = captured["state"]
+        _history = captured["daily_history"]
+        _round = captured["current_round"]
+        _total = captured["total_rounds"]
+        _token = captured["session_token"]
+        _input = captured["player_input"]
+
+        try:
+            dl_resp = json.loads(full_text)
+            narrative = dl_resp.get("narrative", "")
+            options = dl_resp.get("options", [])
+        except Exception:
+            start = full_text.find('{')
+            end = full_text.rfind('}')
+            if start != -1 and end > start:
+                try:
+                    dl_resp = json.loads(full_text[start:end + 1])
+                    narrative = dl_resp.get("narrative", full_text)
+                    options = dl_resp.get("options", [])
+                except Exception:
+                    narrative = full_text
+                    options = []
+            else:
+                logger.error(f"daily_life JSON 解析失败。前200字：{full_text[:200]}")
+                narrative = full_text if full_text.strip() else ""
+                options = []
+
+        _history.append({"role": "player", "content": _input})
+        _history.append({"role": "narrator", "content": narrative})
+
+        _state["daily_life_round"] = _round
+        _state["daily_life_history"] = _history
+
+        is_done = not options
+        if is_done:
+            _state["last_daily_life_context"] = {
+                "last_narrative": narrative,
+                "last_player_input": _input,
+            }
+            _state["daily_life_phase"] = False
+            _state["daily_life_round"] = 0
+            _state["daily_life_total"] = 0
+            _state["daily_life_history"] = []
+
+        save_system.save_game(_token, _state)
+        logger.info(
+            f"日常生活：token={_token[:8]}..., "
+            f"轮数={_round}/{_total}, 完成={is_done}"
+        )
+
+        return {
+            "phase": "daily_life",
+            "narrative": narrative,
+            "options": options,
+            "round": _round,
+            "total": _total,
+            "done": is_done,
+            "stats": _state["stats"],
+            "chapter_info": engine.get_chapter_info(_state),
+        }
+
+    return StreamingResponse(
+        _stream_json_field_sse(dl_messages, "narrative", meta_builder),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
 
 
 @app.get("/api/session/code")
@@ -823,8 +939,7 @@ async def resume_session(req: ResumeRequest):
 @app.get("/api/nav")
 async def get_nav_narrative(token: str = Query(..., description="会话令牌")):
     """
-    单独获取当前位置的导航旁白（AI 生成，耗时较长）。
-    与 /api/state 分离，让界面能先显示再异步加载旁白。
+    导航旁白（SSE 流式输出 narrative 字段）。
     """
     state = save_system.load_game(token)
     if state is None:
@@ -838,9 +953,34 @@ async def get_nav_narrative(token: str = Query(..., description="会话令牌"))
         engine.load_story(story_id)
 
     nav_ctx = engine.get_nav_context(state)
-    narrative = generate_nav_narrative(state)
-    # 同时返回方向列表，前端按钮可直接绑定方向，无需再做文字解析
-    return {"narrative": narrative, "directions": nav_ctx["options"]}
+    chapter = engine.get_current_chapter(state)
+    directions = nav_ctx["options"]
+
+    messages = build_nav_prompt(
+        meta=get_meta(story_id),
+        chapter_name=chapter.get("name", "未知章节"),
+        stats=state["stats"],
+        directions=directions,
+        last_card_context=state.get("last_card_context"),
+        last_daily_life_context=state.get("last_daily_life_context"),
+    )
+
+    def meta_builder(full_text):
+        try:
+            obj = json.loads(full_text)
+            return {
+                "narrative": obj.get("narrative", full_text),
+                "options": obj.get("options", []),
+                "directions": directions,
+            }
+        except Exception:
+            return {"narrative": full_text, "options": [], "directions": directions}
+
+    return StreamingResponse(
+        _stream_json_field_sse(messages, "narrative", meta_builder),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
 
 
 @app.get("/api/card_entry")
@@ -881,9 +1021,17 @@ async def get_card_entry_narrative(token: str = Query(..., description="会话�
         player_choice_text=player_choice,
         last_card_context=last_card_context,
     )
-    narrative = ai_client.call(messages)
-    logger.info(f"卡片入场叙事生成：token={token[:8]}..., 卡片={state['in_card']}")
-    return {"narrative": narrative}
+    card_id = state.get('in_card')
+
+    def meta_builder(full_text):
+        logger.info(f"卡片入场叙事生成：token={token[:8]}..., 卡片={card_id}")
+        return {"narrative": full_text}
+
+    return StreamingResponse(
+        _stream_plain_sse(messages, meta_builder),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
 
 
 @app.get("/api/health")

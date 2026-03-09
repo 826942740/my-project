@@ -3,6 +3,7 @@
   "name": "伊善村·庇护",
   "map_size": {"rows": 5, "cols": 5},
   "card_pool": ["monsters", "npcs", "discoveries"],
+  "card_blacklist": ["jet_plans", "pharan_training", "lost_soul"],
   "main_story_id": "act_2",
   "chapter_ui": {
     "background": "Khem与Jet逃离曼谷，暂住伊善偏远村庄旧木屋。节奏变慢，但村庄里的压迫感与异常目光持续逼近。",
